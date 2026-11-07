@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://anhar-bus.onrender.com/api';
 
 export const api = {
   // Fetch all bookings from MongoDB
