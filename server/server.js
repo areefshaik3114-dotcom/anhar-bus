@@ -5,6 +5,7 @@ require('dotenv').config();
 
 const Booking = require('./models/Booking');
 const ResaleListing = require('./models/ResaleListing');
+const User = require('./models/User');
 
 const app = express();
 
@@ -93,7 +94,7 @@ app.post('/api/resale', async (req, res) => {
   }
 });
 
-// 5. Purchase a resale ticket
+// 5. Purchase a resale ticket & credit seller directly in MongoDB
 app.post('/api/resale/buy', async (req, res) => {
   try {
     const { resaleId, buyerBooking } = req.body;
@@ -111,8 +112,48 @@ app.post('/api/resale/buy', async (req, res) => {
     item.status = 'SOLD';
     await item.save();
 
+    // Create the buyer's new confirmed booking
     const createdTicket = await Booking.create(buyerBooking);
+
+    // Credit seller's wallet directly in MongoDB
+    const sellerPhone = item.sellerPhone;
+    if (sellerPhone) {
+      await User.findOneAndUpdate(
+        { phone: sellerPhone },
+        { $inc: { walletBalance: Number(item.resalePrice) } },
+        { upsert: true }
+      );
+    }
+
     res.status(201).json({ success: true, booking: createdTicket });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. Get or create user wallet in MongoDB Atlas (starts at 0)
+app.get('/api/wallet/:phone', async (req, res) => {
+  try {
+    let user = await User.findOne({ phone: req.params.phone });
+    if (!user) {
+      user = await User.create({ phone: req.params.phone, walletBalance: 0 });
+    }
+    res.json({ success: true, balance: user.walletBalance });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7. Update user wallet balance (Top-up or Deduct)
+app.post('/api/wallet/update', async (req, res) => {
+  try {
+    const { phone, amount } = req.body;
+    const user = await User.findOneAndUpdate(
+      { phone },
+      { $inc: { walletBalance: Number(amount) } },
+      { new: true, upsert: true }
+    );
+    res.json({ success: true, balance: user.walletBalance });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
