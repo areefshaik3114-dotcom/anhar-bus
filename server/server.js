@@ -194,13 +194,49 @@ app.post('/api/auth/send-otp', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid 10-digit mobile number.' });
     }
 
-    // Generate random 4-digit code
+    // Generate random 4-digit numeric code
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     otpStore.set(cleanPhone, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
 
     console.log(`[SMS OTP Generated] Phone: +91 ${cleanPhone} | OTP: ${otp}`);
 
-    // If Fast2SMS API key is set in Render environment, dispatch real SMS via Quick SMS Route ('q')
+    // Fast2SMS Quick Route ('q') bypasses website domain & DLT verification
     if (process.env.FAST2SMS_API_KEY) {
       const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
         method: 'POST',
+        headers: {
+          'authorization': process.env.FAST2SMS_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          route: 'q',
+          message: `Your ANHAR BUS verification code is ${otp}. Valid for 5 minutes. Do not share this OTP.`,
+          language: 'english',
+          flash: 0,
+          numbers: cleanPhone
+        })
+      });
+
+      const smsResult = await smsResponse.json();
+      console.log('[Fast2SMS Result]:', smsResult);
+
+      if (!smsResult.return) {
+        return res.status(500).json({
+          success: false,
+          message: smsResult.message || 'Failed to dispatch SMS'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: `OTP sent via SMS to +91 ${cleanPhone}`
+      });
+    }
+
+    // Dev fallback if key is missing locally
+    res.json({ success: true, message: 'OTP sent (Dev Mode)', devOtp: otp });
+  } catch (err) {
+    console.error('[SMS Dispatch Error]:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
