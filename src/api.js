@@ -1,72 +1,57 @@
-const API_BASE_URL = 'https://anhar-bus.onrender.com/api';
+const API_BASE = 'https://anhar-bus.onrender.com'
 
 export const api = {
-  // Fetch all bookings from MongoDB
-  async getBookings() {
-    try {
-      const res = await fetch(`${API_BASE_URL}/bookings`);
-      const data = await res.json();
-      return data.success ? data.bookings : [];
-    } catch (err) {
-      console.error('Failed to fetch bookings:', err);
-      return [];
-    }
+  getBookings: async () => {
+    const res = await fetch(`${API_BASE}/api/bookings`)
+    const data = await res.json()
+    return data.bookings || []
   },
 
-  // Save a new booking to MongoDB
-  async createBooking(bookingData) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/bookings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bookingData),
-      });
-      return await res.json();
-    } catch (err) {
-      console.error('Failed to create booking:', err);
-      return { success: false, error: err.message };
-    }
+  createBooking: async (bookingData) => {
+    const res = await fetch(`${API_BASE}/api/bookings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bookingData)
+    })
+    return res.json()
   },
 
-  // Fetch all active resale tickets from MongoDB
-  async getResaleListings() {
-    try {
-      const res = await fetch(`${API_BASE_URL}/resale`);
-      const data = await res.json();
-      return data.success ? data.listings : [];
-    } catch (err) {
-      console.error('Failed to fetch resale listings:', err);
-      return [];
-    }
+  getResaleListings: async () => {
+    const res = await fetch(`${API_BASE}/api/resale`)
+    const data = await res.json()
+    return data.listings || []
   },
 
-  // Publish seats to resale
-  async publishResale(listings, updatedBookings) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/resale`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listings, updatedBookings }),
-      });
-      return await res.json();
-    } catch (err) {
-      console.error('Failed to publish resale tickets:', err);
-      return { success: false, error: err.message };
-    }
+  publishResale: async (listings, updatedBookings) => {
+    const res = await fetch(`${API_BASE}/api/resale`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listings, updatedBookings })
+    })
+    return res.json()
   },
 
-  // Buy a resale ticket
-  async buyResale(resaleId, buyerBooking) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/resale/buy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resaleId, buyerBooking }),
-      });
-      return await res.json();
-    } catch (err) {
-      console.error('Failed to buy resale ticket:', err);
-      return { success: false, error: err.message };
-    }
+  buyResale: async (resaleId, buyerBooking) => {
+    const res = await fetch(`${API_BASE}/api/resale/buy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resaleId, buyerBooking })
+    })
+    return res.json()
+  },
+
+  // MongoDB Atlas User Wallet Endpoints
+  getWallet: async (phone) => {
+    const res = await fetch(`${API_BASE}/api/wallet/${phone}`)
+    return res.json()
+  },
+
+  updateWallet: async (phone, amount) => {
+    const res = await fetch(`${API_BASE}/api/wallet/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, amount })
+    })
+    return res.json()
   }
-};
+}
