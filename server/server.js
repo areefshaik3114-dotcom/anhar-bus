@@ -184,8 +184,8 @@ app.post('/api/wallet/update', async (req, res) => {
   }
 });
 
-// 8. Generate & Send OTP for Passenger Verification
-app.post('/api/auth/send-otp', (req, res) => {
+// 8. Generate & Send Real SMS OTP to Indian Mobile Numbers via Fast2SMS
+app.post('/api/auth/send-otp', async (req, res) => {
   try {
     const { phone } = req.body;
     const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
@@ -200,9 +200,41 @@ app.post('/api/auth/send-otp', (req, res) => {
 
     console.log(`[SMS OTP Generated] Phone: +91 ${cleanPhone} | OTP: ${otp}`);
 
-    // Returns devOtp in development so you can test freely without SMS gateway costs
-    res.json({ success: true, message: 'OTP sent successfully', devOtp: otp });
+    // If Fast2SMS API key is set in Render environment, dispatch real SMS
+    if (process.env.FAST2SMS_API_KEY) {
+      const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+        method: 'POST',
+        headers: {
+          'authorization': process.env.FAST2SMS_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          route: 'otp',
+          variables_values: otp,
+          numbers: cleanPhone
+        })
+      });
+
+      const smsResult = await smsResponse.json();
+      console.log('[Fast2SMS Result]:', smsResult);
+
+      if (!smsResult.return) {
+        return res.status(500).json({
+          success: false,
+          message: smsResult.message || 'Failed to dispatch SMS'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: `OTP sent via SMS to +91 ${cleanPhone}`
+      });
+    }
+
+    // Dev fallback if key is missing or running locally without .env
+    res.json({ success: true, message: 'OTP sent (Dev Mode)', devOtp: otp });
   } catch (err) {
+    console.error('[SMS Dispatch Error]:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
