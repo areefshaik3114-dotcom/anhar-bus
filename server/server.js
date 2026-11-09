@@ -46,7 +46,10 @@ mongoose
 // Reusable Fast2SMS Quick Route Dispatch Helper
 const sendQuickSms = async (phone, message) => {
   const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-  if (!process.env.FAST2SMS_API_KEY || cleanPhone.length !== 10) return false;
+  if (!process.env.FAST2SMS_API_KEY || cleanPhone.length !== 10) {
+    console.warn(`[SMS Dispatch Skipped] Invalid phone or missing key: ${cleanPhone}`);
+    return false;
+  }
 
   try {
     const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
@@ -96,7 +99,7 @@ app.post('/api/bookings', async (req, res) => {
     if (newBooking.contact?.phone) {
       const seats = (newBooking.passengers || []).map(p => p.seatNumber).join(', ');
       const msg = `ANHAR BUS Booking Confirmed! PNR: ${newBooking.pnr}, Route: ${newBooking.route}, Date: ${newBooking.journeyDate} at ${newBooking.departure}, Seats: [${seats}]. Boarding: ${newBooking.boarding}. Happy Journey!`;
-      sendQuickSms(newBooking.contact.phone, msg);
+      await sendQuickSms(newBooking.contact.phone, msg);
     }
 
     res.status(201).json({ success: true, booking: newBooking });
@@ -167,28 +170,40 @@ app.post('/api/resale/buy', async (req, res) => {
 
     const createdTicket = await Booking.create(buyerBooking);
 
-    // 1. Credit seller in MongoDB Atlas and dispatch automated payout SMS
-    const targetSellerPhone = item.sellerPhone || (item.contact && item.contact.phone);
-    if (targetSellerPhone) {
-      const cleanSellerPhone = String(targetSellerPhone).replace(/\D/g, '').slice(-10);
+    // Multi-tier seller phone lookup
+    let rawSellerPhone = item.sellerPhone || (item.contact && item.contact.phone);
+
+    // If missing on the listing document, query the original booking record by sellerPnr
+    if (!rawSellerPhone && item.sellerPnr) {
+      const originalBooking = await Booking.findOne({ pnr: item.sellerPnr });
+      if (originalBooking && originalBooking.contact?.phone) {
+        rawSellerPhone = originalBooking.contact.phone;
+      }
+    }
+
+    console.log(`[Resale Purchase] Resolved Seller Phone:`, rawSellerPhone);
+
+    // 1. Credit seller and dispatch automated payout SMS
+    if (rawSellerPhone) {
+      const cleanSellerPhone = String(rawSellerPhone).replace(/\D/g, '').slice(-10);
       const updatedSeller = await User.findOneAndUpdate(
         { phone: cleanSellerPhone },
         { $inc: { walletBalance: Number(item.resalePrice) } },
         { new: true, upsert: true }
       );
 
-      console.log(`[Resale Payout Success] New balance for ${cleanSellerPhone}: ₹${updatedSeller.walletBalance}`);
+      console.log(`[Resale Payout Success] Seller +91 ${cleanSellerPhone} credited ₹${item.resalePrice}. New Balance: ₹${updatedSeller.walletBalance}`);
 
       const sellerAlertMsg = `ANHAR BUS Alert: Your Seat ${item.seatNumber} (${item.busName}) has been sold! ₹${item.resalePrice} credited to your ANHAR Wallet. New Balance: ₹${updatedSeller.walletBalance}.`;
-      sendQuickSms(cleanSellerPhone, sellerAlertMsg);
+      await sendQuickSms(cleanSellerPhone, sellerAlertMsg);
     } else {
-      console.error('[Resale Payout Warning] No valid seller phone found on this listing item!');
+      console.error('[Resale Payout Warning] Could not resolve seller phone for item:', item.id);
     }
 
     // 2. Dispatch ticket confirmation SMS to the resale buyer
     if (createdTicket.contact?.phone) {
       const buyerMsg = `ANHAR BUS Verified Resale Confirmed! PNR: ${createdTicket.pnr}, Bus: ${createdTicket.busName}, Seat: ${item.seatNumber}, Date: ${createdTicket.journeyDate} at ${createdTicket.departure}. Have a safe journey!`;
-      sendQuickSms(createdTicket.contact.phone, buyerMsg);
+      await sendQuickSms(createdTicket.contact.phone, buyerMsg);
     }
 
     res.status(201).json({ success: true, booking: createdTicket });
