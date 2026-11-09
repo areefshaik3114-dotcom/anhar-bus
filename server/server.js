@@ -147,7 +147,7 @@ app.post('/api/resale', async (req, res) => {
   }
 });
 
-// 5. Purchase a resale ticket, credit seller & dispatch confirmation SMS to buyer
+// 5. Purchase a resale ticket, credit seller, & notify BOTH buyer and seller via SMS
 app.post('/api/resale/buy', async (req, res) => {
   try {
     const { resaleId, buyerBooking } = req.body;
@@ -167,21 +167,28 @@ app.post('/api/resale/buy', async (req, res) => {
 
     const createdTicket = await Booking.create(buyerBooking);
 
-    // Credit seller directly in MongoDB
-    const targetPhone = item.sellerPhone || (item.contact && item.contact.phone);
-    if (targetPhone) {
-      const cleanPhone = String(targetPhone).replace(/\D/g, '').slice(-10);
-      await User.findOneAndUpdate(
-        { phone: cleanPhone },
+    // 1. Credit seller in MongoDB Atlas and dispatch automated payout SMS
+    const targetSellerPhone = item.sellerPhone || (item.contact && item.contact.phone);
+    if (targetSellerPhone) {
+      const cleanSellerPhone = String(targetSellerPhone).replace(/\D/g, '').slice(-10);
+      const updatedSeller = await User.findOneAndUpdate(
+        { phone: cleanSellerPhone },
         { $inc: { walletBalance: Number(item.resalePrice) } },
         { new: true, upsert: true }
       );
+
+      console.log(`[Resale Payout Success] New balance for ${cleanSellerPhone}: ₹${updatedSeller.walletBalance}`);
+
+      const sellerAlertMsg = `ANHAR BUS Alert: Your Seat ${item.seatNumber} (${item.busName}) has been sold! ₹${item.resalePrice} credited to your ANHAR Wallet. New Balance: ₹${updatedSeller.walletBalance}.`;
+      sendQuickSms(cleanSellerPhone, sellerAlertMsg);
+    } else {
+      console.error('[Resale Payout Warning] No valid seller phone found on this listing item!');
     }
 
-    // Send SMS Confirmation to the resale ticket buyer
+    // 2. Dispatch ticket confirmation SMS to the resale buyer
     if (createdTicket.contact?.phone) {
-      const msg = `ANHAR BUS Verified Resale Confirmed! PNR: ${createdTicket.pnr}, Bus: ${createdTicket.busName}, Seat: ${item.seatNumber}, Date: ${createdTicket.journeyDate} at ${createdTicket.departure}. Have a safe journey!`;
-      sendQuickSms(createdTicket.contact.phone, msg);
+      const buyerMsg = `ANHAR BUS Verified Resale Confirmed! PNR: ${createdTicket.pnr}, Bus: ${createdTicket.busName}, Seat: ${item.seatNumber}, Date: ${createdTicket.journeyDate} at ${createdTicket.departure}. Have a safe journey!`;
+      sendQuickSms(createdTicket.contact.phone, buyerMsg);
     }
 
     res.status(201).json({ success: true, booking: createdTicket });
