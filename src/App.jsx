@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api } from './api'
 import { useState, useEffect, useMemo } from 'react'
 import './App.css'
 
@@ -42,15 +42,25 @@ export default function App() {
   // In-App Wallet balance
   const [walletBalance, setWalletBalance] = useState(500)
 
+  // User Session & Login Modal State
+  const [currentUser, setCurrentUser] = useState(() => {
+    return localStorage.getItem('anhar_user_phone') || ''
+  })
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [loginInputPhone, setLoginInputPhone] = useState('')
+
   // Filter & Sort States
-  const [selectedTypeFilter, setSelectedTypeFilter] = useState('ALL') // 'ALL', 'AC Sleeper', 'Volvo', 'Non-AC'
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState('ALL') // 'ALL', 'MORNING', 'EVENING', 'NIGHT'
-  const [sortBy, setSortBy] = useState('PRICE_ASC') // 'PRICE_ASC', 'TIME_ASC', 'RATING_DESC'
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState('ALL')
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState('ALL')
+  const [sortBy, setSortBy] = useState('PRICE_ASC')
 
   // Passenger & Modal States
   const [showPassengerModal, setShowPassengerModal] = useState(false)
   const [passengerDetails, setPassengerDetails] = useState([])
-  const [contactInfo, setContactInfo] = useState({ phone: '', email: '' })
+  const [contactInfo, setContactInfo] = useState({
+    phone: localStorage.getItem('anhar_user_phone') || '',
+    email: ''
+  })
 
   // Payment Gateway Modal State
   const [showPaymentModal, setShowPaymentModal] = useState(false)
@@ -76,26 +86,55 @@ export default function App() {
   // Resale Marketplace Listings (Persisted in MongoDB)
   const [resaleListings, setResaleListings] = useState([])
 
+  // Helper to refresh data from MongoDB
+  const fetchLatestData = async () => {
+    try {
+      const [dbBookings, dbResale] = await Promise.all([
+        api.getBookings(),
+        api.getResaleListings()
+      ])
+      if (Array.isArray(dbBookings)) {
+        setMyBookings(dbBookings)
+      }
+      if (Array.isArray(dbResale)) {
+        setResaleListings(dbResale)
+      }
+    } catch (err) {
+      console.error('Failed to load records from MongoDB:', err)
+    }
+  }
+
   // Initial Load from MongoDB Atlas
   useEffect(() => {
-    async function loadDataFromDB() {
-      try {
-        const [dbBookings, dbResale] = await Promise.all([
-          api.getBookings(),
-          api.getResaleListings()
-        ])
-        if (dbBookings && Array.isArray(dbBookings)) {
-          setMyBookings(dbBookings)
-        }
-        if (dbResale && Array.isArray(dbResale)) {
-          setResaleListings(dbResale)
-        }
-      } catch (err) {
-        console.error('Failed to load records from MongoDB:', err)
-      }
-    }
-    loadDataFromDB()
+    fetchLatestData()
   }, [])
+
+  // User personal bookings filtered by logged-in phone number
+  const userPersonalBookings = useMemo(() => {
+    if (!currentUser) return []
+    return myBookings.filter(b => b.contact?.phone === currentUser)
+  }, [myBookings, currentUser])
+
+  // Login & Logout Handlers
+  const handleLoginSubmit = (e) => {
+    e.preventDefault()
+    const cleanPhone = loginInputPhone.trim().replace(/\D/g, '')
+    if (cleanPhone.length === 10) {
+      localStorage.setItem('anhar_user_phone', cleanPhone)
+      setCurrentUser(cleanPhone)
+      setContactInfo(prev => ({ ...prev, phone: cleanPhone }))
+      setShowLoginModal(false)
+      setLoginInputPhone('')
+    } else {
+      alert('Please enter a valid 10-digit mobile number.')
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('anhar_user_phone')
+    setCurrentUser('')
+    alert('Logged out successfully.')
+  }
 
   // Partial Resale Selection Modal (Seller Side)
   const [resellingBooking, setResellingBooking] = useState(null)
@@ -247,20 +286,23 @@ export default function App() {
     setSelectedDroppingPoint(defaultDropping)
   }, [source, destination])
 
+  // Checks ALL bookings across MongoDB so booked seats lock for everyone
   const isSeatBooked = (seatNum, busId) => {
-    const defaultBooked = buses.find(b => b.id === busId)?.bookedSeats.includes(seatNum)
+    const defaultBooked = buses.find(b => Number(b.id) === Number(busId))?.bookedSeats.includes(Number(seatNum))
     if (defaultBooked) return true
 
     return myBookings.some(booking => 
-      booking.busId === busId && 
+      Number(booking.busId) === Number(busId) && 
+      booking.status !== 'ALL_RESOLD' &&
+      booking.status !== 'CANCELLED' &&
       booking.passengers && 
-      booking.passengers.some(p => p.seatNumber === seatNum)
+      booking.passengers.some(p => Number(p.seatNumber) === Number(seatNum))
     )
   }
 
   const handleSeatClick = (seatNumber, bus) => {
     const resaleItem = resaleListings.find(
-      r => r.busId === bus.id && r.seatNumber === seatNumber && r.status === 'AVAILABLE'
+      r => Number(r.busId) === Number(bus.id) && Number(r.seatNumber) === Number(seatNumber) && r.status === 'AVAILABLE'
     )
 
     if (resaleItem) {
@@ -301,6 +343,9 @@ export default function App() {
       gender: 'Male'
     }))
     setPassengerDetails(initialPassengers)
+    if (currentUser && !contactInfo.phone) {
+      setContactInfo(prev => ({ ...prev, phone: currentUser }))
+    }
     setShowPassengerModal(true)
   }
 
@@ -315,6 +360,12 @@ export default function App() {
     const baseFare = selectedSeats.length * selectedBus.price
     const gstAmount = Math.round(baseFare * 0.05)
     const grandTotal = baseFare + gstAmount
+
+    // Auto-login passenger session with the booking phone number
+    if (contactInfo.phone && contactInfo.phone !== currentUser) {
+      localStorage.setItem('anhar_user_phone', contactInfo.phone)
+      setCurrentUser(contactInfo.phone)
+    }
 
     setPendingBookingData({
       type: 'PRIMARY',
@@ -374,7 +425,9 @@ export default function App() {
     // Persist booking directly to MongoDB Atlas
     await api.createBooking(newBooking)
 
-    setMyBookings([newBooking, ...myBookings])
+    // Pull refreshed records from MongoDB to keep client and server identical
+    await fetchLatestData()
+
     setShowPaymentModal(false)
     setPendingBookingData(null)
     setSelectedSeats([])
@@ -438,8 +491,7 @@ export default function App() {
     // Persist resale listings and updated booking state to MongoDB
     await api.publishResale(newListings, updatedBookings)
 
-    setResaleListings([...newListings, ...resaleListings])
-    setMyBookings(updatedBookings)
+    await fetchLatestData()
     setResellingBooking(null)
     setSeatsToResell([])
     alert(`Listed ${newListings.length} seat(s) for resale! Timer is live.`)
@@ -452,7 +504,7 @@ export default function App() {
       name: '',
       age: '',
       gender: 'Male',
-      phone: '',
+      phone: currentUser || '',
       email: ''
     })
   }
@@ -489,13 +541,17 @@ export default function App() {
       status: 'VERIFIED_RESALE_TICKET'
     }
 
+    if (buyerDetails.phone && buyerDetails.phone !== currentUser) {
+      localStorage.setItem('anhar_user_phone', buyerDetails.phone)
+      setCurrentUser(buyerDetails.phone)
+    }
+
     // Process resale purchase and ticket re-issue in MongoDB
     const res = await api.buyResale(selectedResaleItem.id, newBuyerBooking)
 
     if (res.success) {
-      setResaleListings(resaleListings.filter(item => item.id !== selectedResaleItem.id))
       setWalletBalance(prev => prev + selectedResaleItem.resalePrice)
-      setMyBookings([res.booking || newBuyerBooking, ...myBookings])
+      await fetchLatestData()
       setSelectedResaleItem(null)
       alert(`Success! Ticket re-issued with PNR: ${newBuyerPnr} in ${buyerDetails.name}'s name. ₹${selectedResaleItem.resalePrice} added to ANHAR Wallet.`)
       setActiveTab('my-bookings')
@@ -547,12 +603,31 @@ export default function App() {
             <button className={`nav-btn ${activeTab === 'resale-market' ? 'active' : ''}`} onClick={() => setActiveTab('resale-market')}>
               Resale Deals <span className="market-badge">{resaleListings.length}</span>
             </button>
-            <button className={`nav-btn ${activeTab === 'my-bookings' ? 'active' : ''}`} onClick={() => setActiveTab('my-bookings')}>
-              My Bookings ({myBookings.length})
+            <button 
+              className={`nav-btn ${activeTab === 'my-bookings' ? 'active' : ''}`} 
+              onClick={() => {
+                if (!currentUser) {
+                  setShowLoginModal(true)
+                } else {
+                  setActiveTab('my-bookings')
+                }
+              }}
+            >
+              My Bookings ({userPersonalBookings.length})
             </button>
             <div className="wallet-chip" onClick={addFundsToWallet} title="Click to Top-Up Wallet">
               💰 Wallet: <strong>₹{walletBalance}</strong> <span className="wallet-plus">+</span>
             </div>
+            {currentUser ? (
+              <div className="user-profile-badge">
+                <span>📱 +91 {currentUser}</span>
+                <button className="logout-mini-btn" onClick={handleLogout} title="Logout">✕</button>
+              </div>
+            ) : (
+              <button className="login-nav-btn" onClick={() => setShowLoginModal(true)}>
+                Login
+              </button>
+            )}
           </nav>
         </div>
       </header>
@@ -755,7 +830,7 @@ export default function App() {
                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => {
                               const isSelected = selectedSeats.includes(num)
                               const resaleItem = resaleListings.find(
-                                r => r.busId === bus.id && r.seatNumber === num && r.status === 'AVAILABLE'
+                                r => Number(r.busId) === Number(bus.id) && Number(r.seatNumber) === Number(num) && r.status === 'AVAILABLE'
                               )
                               const isBooked = !resaleItem && isSeatBooked(num, bus.id)
                               const isResale = !resaleItem ? false : true
@@ -861,7 +936,7 @@ export default function App() {
         </>
       )}
 
-      {/* TAB 2: MY BOOKINGS */}
+      {/* TAB 2: MY BOOKINGS (PRIVATE TO LOGGED-IN PASSENGER) */}
       {activeTab === 'my-bookings' && (
         <main className="results-container no-print">
           <div className="section-title-row">
@@ -869,14 +944,23 @@ export default function App() {
             <p>View tickets, print conductor boarding passes, or list seats for resale</p>
           </div>
 
-          {myBookings.length === 0 ? (
+          {!currentUser ? (
             <div className="empty-state">
-              <p>You have no active bookings right now.</p>
-              <button className="search-btn" onClick={() => setActiveTab('book')}>Book a Bus Ticket</button>
+              <p>Please log in with your mobile number to view and manage your tickets.</p>
+              <button className="search-btn" onClick={() => setShowLoginModal(true)}>
+                Login with Mobile Number
+              </button>
+            </div>
+          ) : userPersonalBookings.length === 0 ? (
+            <div className="empty-state">
+              <p>No active bookings found for +91 {currentUser}.</p>
+              <button className="search-btn" onClick={() => setActiveTab('book')}>
+                Book a Bus Ticket
+              </button>
             </div>
           ) : (
             <div className="bus-list">
-              {myBookings.map((b) => (
+              {userPersonalBookings.map((b) => (
                 <div key={b.pnr} className="booking-card">
                   <div className="booking-top">
                     <div>
@@ -1484,7 +1568,7 @@ export default function App() {
                 type="range" 
                 min="0" 
                 max="50" 
-                step="10"
+                step="10" 
                 value={resaleMarkup}
                 onChange={(e) => setResaleMarkup(e.target.value)}
               />
@@ -1503,6 +1587,42 @@ export default function App() {
             >
               List {seatsToResell.length} Seat(s) on Resale Marketplace
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: PASSENGER MOBILE NUMBER LOGIN */}
+      {showLoginModal && (
+        <div className="modal-backdrop no-print">
+          <div className="modal-box" style={{ maxWidth: '380px' }}>
+            <div className="modal-header">
+              <h3>Passenger Sign In</h3>
+              <button type="button" className="close-btn" onClick={() => setShowLoginModal(false)}>✕</button>
+            </div>
+            <form onSubmit={handleLoginSubmit}>
+              <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '1.2rem', lineHeight: '1.4' }}>
+                Enter your 10-digit mobile number to view and manage your booked tickets.
+              </p>
+              <div className="form-group">
+                <label>Mobile Number</label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 600, color: '#334155', fontSize: '0.95rem' }}>+91</span>
+                  <input
+                    type="tel"
+                    required
+                    autoFocus
+                    maxLength="10"
+                    pattern="[0-9]{10}"
+                    placeholder="e.g. 9876543210"
+                    value={loginInputPhone}
+                    onChange={(e) => setLoginInputPhone(e.target.value.replace(/\D/g, ''))}
+                  />
+                </div>
+              </div>
+              <button type="submit" className="confirm-btn" style={{ marginTop: '1.2rem', width: '100%' }}>
+                Continue ➔
+              </button>
+            </form>
           </div>
         </div>
       )}
