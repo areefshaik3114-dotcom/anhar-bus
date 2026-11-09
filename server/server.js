@@ -171,11 +171,12 @@ app.post('/api/resale/buy', async (req, res) => {
     const createdTicket = await Booking.create(buyerBooking);
 
     // Multi-tier seller phone lookup
-    let rawSellerPhone = item.sellerPhone || (item.contact && item.contact.phone);
+    let rawSellerPhone = item.sellerPhone || (item.contact && item.contact.phone) || buyerBooking.sellerPhone;
 
     // If missing on the listing document, query the original booking record by sellerPnr
-    if (!rawSellerPhone && item.sellerPnr) {
-      const originalBooking = await Booking.findOne({ pnr: item.sellerPnr });
+    if (!rawSellerPhone && (item.sellerPnr || buyerBooking.sellerPnr)) {
+      const targetPnr = item.sellerPnr || buyerBooking.sellerPnr;
+      const originalBooking = await Booking.findOne({ pnr: targetPnr });
       if (originalBooking && originalBooking.contact?.phone) {
         rawSellerPhone = originalBooking.contact.phone;
       }
@@ -183,7 +184,7 @@ app.post('/api/resale/buy', async (req, res) => {
 
     console.log(`[Resale Purchase] Resolved Seller Phone:`, rawSellerPhone);
 
-    // 1. Credit seller and dispatch automated payout SMS
+    // 1. Credit seller and dispatch automated payout SMS (Anti-Spam Filter Compliant)
     if (rawSellerPhone) {
       const cleanSellerPhone = String(rawSellerPhone).replace(/\D/g, '').slice(-10);
       const updatedSeller = await User.findOneAndUpdate(
@@ -194,8 +195,9 @@ app.post('/api/resale/buy', async (req, res) => {
 
       console.log(`[Resale Payout Success] Seller +91 ${cleanSellerPhone} credited ₹${item.resalePrice}. New Balance: ₹${updatedSeller.walletBalance}`);
 
-      const sellerAlertMsg = `ANHAR BUS Alert: Your Seat ${item.seatNumber} (${item.busName}) has been sold! ₹${item.resalePrice} credited to your ANHAR Wallet. New Balance: ₹${updatedSeller.walletBalance}.`;
-      await sendQuickSms(cleanSellerPhone, sellerAlertMsg);
+      const sellerAlertMsg = `ANHAR BUS Update: Your bus seat ${item.seatNumber} has been re-booked by a passenger. Rs ${item.resalePrice} added to your ANHAR account wallet.`;
+      const sellerStatus = await sendQuickSms(cleanSellerPhone, sellerAlertMsg);
+      console.log(`[Seller SMS Status to ${cleanSellerPhone}]:`, sellerStatus);
     } else {
       console.error('[Resale Payout Warning] Could not resolve seller phone for item:', item.id);
     }
@@ -203,7 +205,8 @@ app.post('/api/resale/buy', async (req, res) => {
     // 2. Dispatch ticket confirmation SMS to the resale buyer
     if (createdTicket.contact?.phone) {
       const buyerMsg = `ANHAR BUS Verified Resale Confirmed! PNR: ${createdTicket.pnr}, Bus: ${createdTicket.busName}, Seat: ${item.seatNumber}, Date: ${createdTicket.journeyDate} at ${createdTicket.departure}. Have a safe journey!`;
-      await sendQuickSms(createdTicket.contact.phone, buyerMsg);
+      const buyerStatus = await sendQuickSms(createdTicket.contact.phone, buyerMsg);
+      console.log(`[Buyer SMS Status]:`, buyerStatus);
     }
 
     res.status(201).json({ success: true, booking: createdTicket });
