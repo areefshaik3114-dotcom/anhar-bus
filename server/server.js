@@ -112,21 +112,27 @@ app.post('/api/resale/buy', async (req, res) => {
     item.status = 'SOLD';
     await item.save();
 
-    // Create the buyer's new confirmed booking
     const createdTicket = await Booking.create(buyerBooking);
 
-    // Credit seller's wallet directly in MongoDB
-    const sellerPhone = item.sellerPhone;
-    if (sellerPhone) {
-      await User.findOneAndUpdate(
-        { phone: sellerPhone },
+    // DIRECT MONGODB CREDIT TO SELLER ACCOUNT
+    const targetPhone = item.sellerPhone || (item.contact && item.contact.phone);
+    console.log(`[Resale Payout] Crediting ₹${item.resalePrice} to seller phone:`, targetPhone);
+
+    if (targetPhone) {
+      const cleanPhone = String(targetPhone).replace(/\D/g, '').slice(-10);
+      const updatedUser = await User.findOneAndUpdate(
+        { phone: cleanPhone },
         { $inc: { walletBalance: Number(item.resalePrice) } },
-        { upsert: true }
+        { new: true, upsert: true }
       );
+      console.log(`[Resale Payout Success] New balance for ${cleanPhone}: ₹${updatedUser.walletBalance}`);
+    } else {
+      console.error('[Resale Payout Warning] No seller phone found on this listing item!');
     }
 
     res.status(201).json({ success: true, booking: createdTicket });
   } catch (err) {
+    console.error('[Resale Payout Error]:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
