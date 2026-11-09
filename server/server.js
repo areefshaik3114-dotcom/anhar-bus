@@ -85,7 +85,6 @@ app.post('/api/resale', async (req, res) => {
 
     if (listings && Array.isArray(listings)) {
       for (const item of listings) {
-        // Prevent listing if this exact bus and seat is already live
         const existing = await ResaleListing.findOne({
           busId: item.busId,
           seatNumber: item.seatNumber,
@@ -131,7 +130,6 @@ app.post('/api/resale/buy', async (req, res) => {
 
     const createdTicket = await Booking.create(buyerBooking);
 
-    // DIRECT MONGODB CREDIT TO SELLER ACCOUNT
     const targetPhone = item.sellerPhone || (item.contact && item.contact.phone);
     console.log(`[Resale Payout] Crediting ₹${item.resalePrice} to seller phone:`, targetPhone);
 
@@ -168,7 +166,7 @@ app.get('/api/wallet/:phone', async (req, res) => {
   }
 });
 
-// 7. Update user wallet balance (Top-up or Deduct)
+// 7. Update user wallet balance
 app.post('/api/wallet/update', async (req, res) => {
   try {
     const { phone, amount } = req.body;
@@ -184,7 +182,7 @@ app.post('/api/wallet/update', async (req, res) => {
   }
 });
 
-// 8. Generate & Send Real SMS OTP to Indian Mobile Numbers via Fast2SMS Quick Route
+// 8. Generate & Send Real SMS OTP via Fast2SMS Quick Route ('q')
 app.post('/api/auth/send-otp', async (req, res) => {
   try {
     const { phone } = req.body;
@@ -194,13 +192,11 @@ app.post('/api/auth/send-otp', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid 10-digit mobile number.' });
     }
 
-    // Generate random 4-digit numeric code
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     otpStore.set(cleanPhone, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
 
     console.log(`[SMS OTP Generated] Phone: +91 ${cleanPhone} | OTP: ${otp}`);
 
-    // Fast2SMS Quick Route ('q') bypasses website domain & DLT verification
     if (process.env.FAST2SMS_API_KEY) {
       const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
         method: 'POST',
@@ -233,10 +229,46 @@ app.post('/api/auth/send-otp', async (req, res) => {
       });
     }
 
-    // Dev fallback if key is missing locally
     res.json({ success: true, message: 'OTP sent (Dev Mode)', devOtp: otp });
   } catch (err) {
     console.error('[SMS Dispatch Error]:', err);
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// 9. Verify OTP & Register/Update User Profile
+app.post('/api/auth/verify-otp', async (req, res) => {
+  try {
+    const { phone, name, email, otp } = req.body;
+    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+
+    const record = otpStore.get(cleanPhone);
+    if (!record || record.otp !== String(otp).trim() || Date.now() > record.expiresAt) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
+    }
+
+    otpStore.delete(cleanPhone);
+
+    const user = await User.findOneAndUpdate(
+      { phone: cleanPhone },
+      {
+        $set: {
+          name: name || 'Passenger',
+          email: email || ''
+        },
+        $setOnInsert: { walletBalance: 0 }
+      },
+      { new: true, upsert: true }
+    );
+
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 10. Bind and listen on all network interfaces
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`ANHAR BUS Server live on port ${PORT}`);
 });
