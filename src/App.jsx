@@ -46,36 +46,27 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [loginInputPhone, setLoginInputPhone] = useState('')
 
-  // Helper function to read persistent wallet balance (defaults to 0)
-  const getUserWalletBalance = (phone) => {
-    if (!phone) return 0
-    const saved = localStorage.getItem(`anhar_wallet_${phone}`)
-    return saved !== null ? Number(saved) : 0
-  }
+  // In-App Wallet balance (persisted in MongoDB Atlas, starts at 0)
+  const [walletBalance, setWalletBalance] = useState(0)
 
-  // In-App Wallet balance (starts at 0 and persists across page reloads)
-  const [walletBalance, setWalletBalance] = useState(() => {
-    const savedPhone = localStorage.getItem('anhar_user_phone') || ''
-    return getUserWalletBalance(savedPhone)
-  })
-
-  // Synchronize wallet when user logs in or switches account
+  // Fetch real-time wallet balance from MongoDB whenever user logs in or switches
   useEffect(() => {
-    if (currentUser) {
-      setWalletBalance(getUserWalletBalance(currentUser))
-    } else {
-      setWalletBalance(0)
+    const fetchUserWallet = async () => {
+      if (currentUser) {
+        try {
+          const res = await api.getWallet(currentUser)
+          if (res && res.success) {
+            setWalletBalance(res.balance)
+          }
+        } catch (err) {
+          console.error('Failed to fetch wallet from MongoDB:', err)
+        }
+      } else {
+        setWalletBalance(0)
+      }
     }
+    fetchUserWallet()
   }, [currentUser])
-
-  // Persistent wallet updater helper
-  const updateCurrentUserWallet = (newBalance) => {
-    const safeBalance = Math.max(0, Number(newBalance))
-    setWalletBalance(safeBalance)
-    if (currentUser) {
-      localStorage.setItem(`anhar_wallet_${currentUser}`, String(safeBalance))
-    }
-  }
 
   // Filter & Sort States
   const [selectedTypeFilter, setSelectedTypeFilter] = useState('ALL')
@@ -161,6 +152,7 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('anhar_user_phone')
     setCurrentUser('')
+    setWalletBalance(0)
     alert('Logged out successfully.')
   }
 
@@ -179,7 +171,7 @@ export default function App() {
     email: ''
   })
 
-  // Comprehensive fleet with varied schedules and categories
+  // Comprehensive fleet with schedules and categories
   const buses = [
     {
       id: 1,
@@ -420,7 +412,12 @@ export default function App() {
 
     if (useWalletOffset && walletBalance > 0) {
       deduction = Math.min(walletBalance, pendingBookingData.grandTotal)
-      updateCurrentUserWallet(walletBalance - deduction)
+      try {
+        await api.updateWallet(currentUser, -deduction)
+        setWalletBalance(prev => prev - deduction)
+      } catch (err) {
+        console.error('Wallet deduction error:', err)
+      }
       remainingToPay -= deduction
     }
 
@@ -577,30 +574,27 @@ export default function App() {
       status: 'VERIFIED_RESALE_TICKET'
     }
 
-    // Process resale purchase in MongoDB
+    // Process resale purchase: Backend automatically credits seller's document in MongoDB Atlas
     const res = await api.buyResale(selectedResaleItem.id, newBuyerBooking)
 
     if (res.success) {
-      // 1. Credit the payout exclusively to the SELLER'S wallet in persistent storage
-      const sellerPhone = selectedResaleItem.sellerPhone
-      if (sellerPhone) {
-        const sellerKey = `anhar_wallet_${sellerPhone}`
-        const currentSellerBal = Number(localStorage.getItem(sellerKey) || 0)
-        const newSellerBal = currentSellerBal + Number(selectedResaleItem.resalePrice)
-        localStorage.setItem(sellerKey, String(newSellerBal))
-      }
-
-      // 2. Buyer's account: buyer paid for the ticket, so their wallet is NOT credited
+      // Set active session to buyer
       if (buyerDetails.phone) {
         localStorage.setItem('anhar_user_phone', buyerDetails.phone)
         setCurrentUser(buyerDetails.phone)
-        const buyerBal = getUserWalletBalance(buyerDetails.phone)
-        setWalletBalance(buyerBal)
+        try {
+          const buyerWallet = await api.getWallet(buyerDetails.phone)
+          if (buyerWallet && buyerWallet.success) {
+            setWalletBalance(buyerWallet.balance)
+          }
+        } catch (err) {
+          console.error('Failed to sync buyer wallet:', err)
+        }
       }
 
       await fetchLatestData()
       setSelectedResaleItem(null)
-      alert(`Success! Ticket confirmed with PNR: ${newBuyerPnr}. ₹${selectedResaleItem.resalePrice} has been credited to seller's wallet (+91 ${sellerPhone || 'Seller'}).`)
+      alert(`Success! Ticket confirmed with PNR: ${newBuyerPnr}. ₹${selectedResaleItem.resalePrice} has been credited to seller's MongoDB wallet.`)
       setActiveTab('my-bookings')
     } else {
       alert(res.message || 'Failed to complete resale ticket transaction.')
@@ -617,16 +611,22 @@ export default function App() {
     window.print()
   }
 
-  const addFundsToWallet = () => {
+  const addFundsToWallet = async () => {
     if (!currentUser) {
       setShowLoginModal(true)
       return
     }
     const amount = Number(prompt('Enter amount to add to ANHAR Wallet (₹):', '500'))
     if (amount > 0) {
-      const updated = walletBalance + amount
-      updateCurrentUserWallet(updated)
-      alert(`₹${amount} added successfully! New Wallet Balance: ₹${updated}`)
+      try {
+        const res = await api.updateWallet(currentUser, amount)
+        if (res && res.success) {
+          setWalletBalance(res.balance)
+          alert(`₹${amount} added successfully! New Wallet Balance: ₹${res.balance}`)
+        }
+      } catch (err) {
+        alert('Failed to update wallet in database.')
+      }
     }
   }
 
