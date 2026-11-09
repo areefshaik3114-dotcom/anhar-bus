@@ -164,10 +164,11 @@ export default function App() {
       const res = await api.sendOtp(cleanPhone)
       if (res && res.success) {
         setLoginStep('OTP')
+        // Checks if backend delivered via live SMS or local fallback
         if (res.devOtp) {
-          alert(`Verification Code: ${res.devOtp}`)
+          alert(`Gateway offline. Use dev code: ${res.devOtp}`)
         } else {
-          alert(`OTP sent via SMS to +91 ${cleanPhone}`)
+          alert(`OTP successfully sent to +91 ${cleanPhone}. Please check your SMS inbox.`)
         }
       } else {
         alert(res?.message || 'Failed to send OTP. Please try again.')
