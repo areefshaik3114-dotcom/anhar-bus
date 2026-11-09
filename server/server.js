@@ -184,7 +184,7 @@ app.post('/api/wallet/update', async (req, res) => {
   }
 });
 
-// 8. Generate & Send Real SMS OTP to Indian Mobile Numbers via Fast2SMS
+// 8. Generate & Send Real SMS OTP to Indian Mobile Numbers via Fast2SMS Quick Route
 app.post('/api/auth/send-otp', async (req, res) => {
   try {
     const { phone } = req.body;
@@ -200,78 +200,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
     console.log(`[SMS OTP Generated] Phone: +91 ${cleanPhone} | OTP: ${otp}`);
 
-    // If Fast2SMS API key is set in Render environment, dispatch real SMS
+    // If Fast2SMS API key is set in Render environment, dispatch real SMS via Quick SMS Route ('q')
     if (process.env.FAST2SMS_API_KEY) {
       const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
         method: 'POST',
-        headers: {
-          'authorization': process.env.FAST2SMS_API_KEY,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          route: 'otp',
-          variables_values: otp,
-          numbers: cleanPhone
-        })
-      });
-
-      const smsResult = await smsResponse.json();
-      console.log('[Fast2SMS Result]:', smsResult);
-
-      if (!smsResult.return) {
-        return res.status(500).json({
-          success: false,
-          message: smsResult.message || 'Failed to dispatch SMS'
-        });
-      }
-
-      return res.json({
-        success: true,
-        message: `OTP sent via SMS to +91 ${cleanPhone}`
-      });
-    }
-
-    // Dev fallback if key is missing or running locally without .env
-    res.json({ success: true, message: 'OTP sent (Dev Mode)', devOtp: otp });
-  } catch (err) {
-    console.error('[SMS Dispatch Error]:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 9. Verify OTP & Register/Update User Profile (Name, Email, Phone)
-app.post('/api/auth/verify-otp', async (req, res) => {
-  try {
-    const { phone, name, email, otp } = req.body;
-    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-
-    const record = otpStore.get(cleanPhone);
-    if (!record || record.otp !== String(otp).trim() || Date.now() > record.expiresAt) {
-      return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
-    }
-
-    // Clear OTP after successful verification
-    otpStore.delete(cleanPhone);
-
-    const user = await User.findOneAndUpdate(
-      { phone: cleanPhone },
-      {
-        $set: {
-          name: name || 'Passenger',
-          email: email || ''
-        },
-        $setOnInsert: { walletBalance: 0 }
-      },
-      { new: true, upsert: true }
-    );
-
-    res.json({ success: true, user });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(` ANHAR BUS Server live on port ${PORT}`);
-});
