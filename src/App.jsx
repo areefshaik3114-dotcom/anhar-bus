@@ -164,7 +164,6 @@ export default function App() {
       const res = await api.sendOtp(cleanPhone)
       if (res && res.success) {
         setLoginStep('OTP')
-        // Checks if backend delivered via live SMS or local fallback
         if (res.devOtp) {
           alert(`Gateway offline. Use dev code: ${res.devOtp}`)
         } else {
@@ -500,6 +499,8 @@ export default function App() {
       remainingToPay -= deduction
     }
 
+    const cleanContactPhone = String(pendingBookingData.contact?.phone || currentUser || '').replace(/\D/g, '').slice(-10)
+
     const newBooking = {
       pnr: newPnr,
       busId: pendingBookingData.bus.id,
@@ -513,7 +514,10 @@ export default function App() {
       dropping: pendingBookingData.dropping,
       unitPrice: pendingBookingData.bus.price,
       passengers: [...pendingBookingData.passengers],
-      contact: { ...pendingBookingData.contact },
+      contact: {
+        phone: cleanContactPhone,
+        email: pendingBookingData.contact?.email || ''
+      },
       baseFare: pendingBookingData.baseFare,
       gstAmount: pendingBookingData.gstAmount,
       totalPaid: pendingBookingData.grandTotal,
@@ -641,6 +645,8 @@ export default function App() {
   const handleResalePurchaseSubmit = async (e) => {
     e.preventDefault()
 
+    const cleanBuyerPhone = String(buyerDetails.phone).replace(/\D/g, '').slice(-10)
+
     const newBuyerPnr = 'RES-ANH' + Math.floor(100000 + Math.random() * 900000)
     const newBuyerBooking = {
       pnr: newBuyerPnr,
@@ -661,9 +667,11 @@ export default function App() {
         gender: buyerDetails.gender
       }],
       contact: {
-        phone: buyerDetails.phone,
+        phone: cleanBuyerPhone,
         email: buyerDetails.email
       },
+      sellerPnr: selectedResaleItem.sellerPnr,
+      sellerPhone: selectedResaleItem.sellerPhone,
       baseFare: selectedResaleItem.resalePrice,
       totalPaid: selectedResaleItem.resalePrice,
       paymentMethod: 'UPI / INSTANT',
@@ -675,8 +683,7 @@ export default function App() {
 
     if (res.success) {
       // Set active session to buyer
-      if (buyerDetails.phone) {
-        const cleanBuyerPhone = buyerDetails.phone.replace(/\D/g, '').slice(-10)
+      if (cleanBuyerPhone) {
         localStorage.setItem('anhar_user_phone', cleanBuyerPhone)
         setCurrentUser(cleanBuyerPhone)
         try {
@@ -1375,7 +1382,7 @@ export default function App() {
                     type="number" 
                     required 
                     min="1" 
-                    max="120"
+                    max="120" 
                     placeholder="Age"
                     value={buyerDetails.age}
                     onChange={(e) => setBuyerDetails({ ...buyerDetails, age: e.target.value })}
@@ -1460,7 +1467,7 @@ export default function App() {
                           type="number" 
                           required 
                           min="1" 
-                          max="120"
+                          max="120" 
                           placeholder="Age"
                           value={p.age}
                           onChange={(e) => handlePassengerChange(index, 'age', e.target.value)}
@@ -1718,7 +1725,7 @@ export default function App() {
                 min="0" 
                 max="50" 
                 step="10" 
-                value={resaleMarkup}
+                value={resaleMarkup} 
                 onChange={(e) => setResaleMarkup(e.target.value)}
               />
               <span className="cap-note">As per ANHAR policy, max markup allowed is ₹50 over base fare.</span>
