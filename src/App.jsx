@@ -43,8 +43,24 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
     return localStorage.getItem('anhar_user_phone') || ''
   })
+  const [currentUserName, setCurrentUserName] = useState(() => {
+    return localStorage.getItem('anhar_user_name') || ''
+  })
+  const [currentUserEmail, setCurrentUserEmail] = useState(() => {
+    return localStorage.getItem('anhar_user_email') || ''
+  })
+
+  // OTP Verification States
   const [showLoginModal, setShowLoginModal] = useState(false)
-  const [loginInputPhone, setLoginInputPhone] = useState('')
+  const [loginStep, setLoginStep] = useState('DETAILS') // 'DETAILS' | 'OTP'
+  const [loginForm, setLoginForm] = useState({
+    name: '',
+    email: '',
+    phone: ''
+  })
+  const [otpInput, setOtpInput] = useState('')
+  const [isSendingOtp, setIsSendingOtp] = useState(false)
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false)
 
   // In-App Wallet balance (persisted in MongoDB Atlas, starts at 0)
   const [walletBalance, setWalletBalance] = useState(0)
@@ -78,7 +94,7 @@ export default function App() {
   const [passengerDetails, setPassengerDetails] = useState([])
   const [contactInfo, setContactInfo] = useState({
     phone: localStorage.getItem('anhar_user_phone') || '',
-    email: ''
+    email: localStorage.getItem('anhar_user_email') || ''
   })
 
   // Payment Gateway Modal State
@@ -134,24 +150,80 @@ export default function App() {
     return myBookings.filter(b => b.contact?.phone === currentUser)
   }, [myBookings, currentUser])
 
-  // Login & Logout Handlers
-  const handleLoginSubmit = (e) => {
+  // Login via Phone OTP Handlers
+  const handleRequestOtp = async (e) => {
     e.preventDefault()
-    const cleanPhone = loginInputPhone.trim().replace(/\D/g, '')
-    if (cleanPhone.length === 10) {
-      localStorage.setItem('anhar_user_phone', cleanPhone)
-      setCurrentUser(cleanPhone)
-      setContactInfo(prev => ({ ...prev, phone: cleanPhone }))
-      setShowLoginModal(false)
-      setLoginInputPhone('')
-    } else {
+    const cleanPhone = loginForm.phone.trim().replace(/\D/g, '').slice(-10)
+    if (cleanPhone.length !== 10) {
       alert('Please enter a valid 10-digit mobile number.')
+      return
+    }
+
+    setIsSendingOtp(true)
+    try {
+      const res = await api.sendOtp(cleanPhone)
+      if (res && res.success) {
+        setLoginStep('OTP')
+        if (res.devOtp) {
+          alert(`Verification Code: ${res.devOtp}`)
+        } else {
+          alert(`OTP sent via SMS to +91 ${cleanPhone}`)
+        }
+      } else {
+        alert(res?.message || 'Failed to send OTP. Please try again.')
+      }
+    } catch (err) {
+      alert('Error contacting verification service. Please try again.')
+    } finally {
+      setIsSendingOtp(false)
+    }
+  }
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault()
+    const cleanPhone = loginForm.phone.trim().replace(/\D/g, '').slice(-10)
+
+    setIsVerifyingOtp(true)
+    try {
+      const res = await api.verifyOtp({
+        phone: cleanPhone,
+        name: loginForm.name.trim(),
+        email: loginForm.email.trim(),
+        otp: otpInput.trim()
+      })
+
+      if (res && res.success) {
+        localStorage.setItem('anhar_user_phone', cleanPhone)
+        localStorage.setItem('anhar_user_name', loginForm.name.trim())
+        localStorage.setItem('anhar_user_email', loginForm.email.trim())
+
+        setCurrentUser(cleanPhone)
+        setCurrentUserName(loginForm.name.trim())
+        setCurrentUserEmail(loginForm.email.trim())
+        setContactInfo({ phone: cleanPhone, email: loginForm.email.trim() })
+
+        setShowLoginModal(false)
+        setLoginStep('DETAILS')
+        setLoginForm({ name: '', email: '', phone: '' })
+        setOtpInput('')
+        alert(`Welcome, ${loginForm.name.trim() || 'Passenger'}! You are now verified.`)
+      } else {
+        alert(res?.message || 'Invalid or expired OTP. Please try again.')
+      }
+    } catch (err) {
+      alert('Verification failed. Please check your network and retry.')
+    } finally {
+      setIsVerifyingOtp(false)
     }
   }
 
   const handleLogout = () => {
     localStorage.removeItem('anhar_user_phone')
+    localStorage.removeItem('anhar_user_name')
+    localStorage.removeItem('anhar_user_email')
     setCurrentUser('')
+    setCurrentUserName('')
+    setCurrentUserEmail('')
     setWalletBalance(0)
     alert('Logged out successfully.')
   }
@@ -160,6 +232,7 @@ export default function App() {
   const [resellingBooking, setResellingBooking] = useState(null)
   const [seatsToResell, setSeatsToResell] = useState([])
   const [resaleMarkup, setResaleMarkup] = useState(0)
+  const [isSubmittingResale, setIsSubmittingResale] = useState(false)
 
   // Resale Buyer Checkout Modal (Buyer Side)
   const [selectedResaleItem, setSelectedResaleItem] = useState(null)
@@ -364,7 +437,11 @@ export default function App() {
     }))
     setPassengerDetails(initialPassengers)
     if (currentUser && !contactInfo.phone) {
-      setContactInfo(prev => ({ ...prev, phone: currentUser }))
+      setContactInfo(prev => ({ 
+        ...prev, 
+        phone: currentUser, 
+        email: currentUserEmail || prev.email 
+      }))
     }
     setShowPassengerModal(true)
   }
@@ -383,8 +460,9 @@ export default function App() {
 
     // Auto-login passenger session with the booking phone number
     if (contactInfo.phone && contactInfo.phone !== currentUser) {
-      localStorage.setItem('anhar_user_phone', contactInfo.phone)
-      setCurrentUser(contactInfo.phone)
+      const cleanPhone = contactInfo.phone.replace(/\D/g, '').slice(-10)
+      localStorage.setItem('anhar_user_phone', cleanPhone)
+      setCurrentUser(cleanPhone)
     }
 
     setPendingBookingData({
@@ -476,69 +554,86 @@ export default function App() {
     }
   }
 
+  // Prevents multiple rapid clicks from creating duplicate resale items
   const confirmResaleListing = async () => {
-    if (seatsToResell.length === 0) return
+    if (seatsToResell.length === 0 || isSubmittingResale) return
 
-    const listingCutoff = Date.now() + 3 * 60 * 60 * 1000
+    setIsSubmittingResale(true)
 
-    // Capture the seller phone reliably from booking contact or active session
-    const resolvedSellerPhone = 
-      resellingBooking.contact?.phone || 
-      currentUser || 
-      localStorage.getItem('anhar_user_phone') || 
-      ''
+    try {
+      const listingCutoff = Date.now() + 3 * 60 * 60 * 1000
 
-    const newListings = seatsToResell.map((seatNum) => ({
-      id: `RES-${Math.floor(1000 + Math.random() * 9000)}`,
-      busId: resellingBooking.busId,
-      busName: resellingBooking.busName,
-      busNumber: resellingBooking.busNumber || 'AP 04 TX 9924',
-      route: resellingBooking.route,
-      date: resellingBooking.journeyDate,
-      time: resellingBooking.departure,
-      cutoffTimestamp: listingCutoff,
-      boarding: resellingBooking.boarding,
-      dropping: resellingBooking.dropping,
-      seatNumber: seatNum,
-      originalPrice: resellingBooking.unitPrice,
-      resalePrice: resellingBooking.unitPrice + Number(resaleMarkup),
-      sellerPnr: resellingBooking.pnr,
-      sellerName: resellingBooking.passengers.find(p => p.seatNumber === seatNum)?.name || 'Passenger',
-      sellerPhone: resolvedSellerPhone,
-      status: 'AVAILABLE'
-    }))
+      // Capture the seller phone reliably from booking contact or active session
+      const rawSellerPhone = 
+        resellingBooking.contact?.phone || 
+        currentUser || 
+        localStorage.getItem('anhar_user_phone') || 
+        ''
 
-    const updatedBookings = myBookings.map(b => {
-      if (b.pnr === resellingBooking.pnr) {
-        const remaining = b.passengers.filter(p => !seatsToResell.includes(p.seatNumber))
-        return {
-          ...b,
-          passengers: remaining,
-          totalPaid: remaining.length * b.unitPrice,
-          status: remaining.length === 0 ? 'ALL_RESOLD' : 'PARTIALLY_RESOLD'
-        }
+      const cleanSellerPhone = String(rawSellerPhone).replace(/\D/g, '').slice(-10)
+
+      if (!cleanSellerPhone || cleanSellerPhone.length !== 10) {
+        alert('Valid 10-digit mobile number required to receive your resale payout.')
+        setIsSubmittingResale(false)
+        return
       }
-      return b
-    })
 
-    // Persist resale listings and updated booking state to MongoDB
-    await api.publishResale(newListings, updatedBookings)
+      const newListings = seatsToResell.map((seatNum) => ({
+        id: `RES-${Date.now()}-${seatNum}`,
+        busId: resellingBooking.busId,
+        busName: resellingBooking.busName,
+        busNumber: resellingBooking.busNumber || 'AP 04 TX 9924',
+        route: resellingBooking.route,
+        date: resellingBooking.journeyDate,
+        time: resellingBooking.departure,
+        cutoffTimestamp: listingCutoff,
+        boarding: resellingBooking.boarding,
+        dropping: resellingBooking.dropping,
+        seatNumber: seatNum,
+        originalPrice: resellingBooking.unitPrice,
+        resalePrice: resellingBooking.unitPrice + Number(resaleMarkup),
+        sellerPnr: resellingBooking.pnr,
+        sellerName: resellingBooking.passengers.find(p => p.seatNumber === seatNum)?.name || currentUserName || 'Passenger',
+        sellerPhone: cleanSellerPhone,
+        status: 'AVAILABLE'
+      }))
 
-    await fetchLatestData()
-    setResellingBooking(null)
-    setSeatsToResell([])
-    alert(`Listed ${newListings.length} seat(s) for resale! Timer is live.`)
-    setActiveTab('resale-market')
+      const updatedBookings = myBookings.map(b => {
+        if (b.pnr === resellingBooking.pnr) {
+          const remaining = b.passengers.filter(p => !seatsToResell.includes(p.seatNumber))
+          return {
+            ...b,
+            passengers: remaining,
+            totalPaid: remaining.length * b.unitPrice,
+            status: remaining.length === 0 ? 'ALL_RESOLD' : 'PARTIALLY_RESOLD'
+          }
+        }
+        return b
+      })
+
+      // Persist resale listings and updated booking state to MongoDB
+      await api.publishResale(newListings, updatedBookings)
+
+      await fetchLatestData()
+      setResellingBooking(null)
+      setSeatsToResell([])
+      alert(`Listed ${newListings.length} seat(s) for resale! Timer is live.`)
+      setActiveTab('resale-market')
+    } catch (err) {
+      alert('Failed to publish resale listing. Please try again.')
+    } finally {
+      setIsSubmittingResale(false)
+    }
   }
 
   const openBuyerModal = (listing) => {
     setSelectedResaleItem(listing)
     setBuyerDetails({
-      name: '',
+      name: currentUserName || '',
       age: '',
       gender: 'Male',
       phone: currentUser || '',
-      email: ''
+      email: currentUserEmail || ''
     })
   }
 
@@ -574,16 +669,17 @@ export default function App() {
       status: 'VERIFIED_RESALE_TICKET'
     }
 
-    // Process resale purchase: Backend automatically credits seller's document in MongoDB Atlas
+    // Process resale purchase: Backend automatically credits seller's User document in MongoDB Atlas
     const res = await api.buyResale(selectedResaleItem.id, newBuyerBooking)
 
     if (res.success) {
       // Set active session to buyer
       if (buyerDetails.phone) {
-        localStorage.setItem('anhar_user_phone', buyerDetails.phone)
-        setCurrentUser(buyerDetails.phone)
+        const cleanBuyerPhone = buyerDetails.phone.replace(/\D/g, '').slice(-10)
+        localStorage.setItem('anhar_user_phone', cleanBuyerPhone)
+        setCurrentUser(cleanBuyerPhone)
         try {
-          const buyerWallet = await api.getWallet(buyerDetails.phone)
+          const buyerWallet = await api.getWallet(cleanBuyerPhone)
           if (buyerWallet && buyerWallet.success) {
             setWalletBalance(buyerWallet.balance)
           }
@@ -672,7 +768,7 @@ export default function App() {
             </div>
             {currentUser ? (
               <div className="user-profile-badge">
-                <span>📱 +91 {currentUser}</span>
+                <span>📱 {currentUserName ? `${currentUserName} (+91 ${currentUser})` : `+91 ${currentUser}`}</span>
                 <button className="logout-mini-btn" onClick={handleLogout} title="Logout">✕</button>
               </div>
             ) : (
@@ -1634,47 +1730,127 @@ export default function App() {
 
             <button 
               className="confirm-btn" 
-              disabled={seatsToResell.length === 0}
+              disabled={seatsToResell.length === 0 || isSubmittingResale}
               onClick={confirmResaleListing}
             >
-              List {seatsToResell.length} Seat(s) on Resale Marketplace
+              {isSubmittingResale ? 'Listing Seats...' : `List ${seatsToResell.length} Seat(s) on Resale Marketplace`}
             </button>
           </div>
         </div>
       )}
 
-      {/* MODAL 4: PASSENGER MOBILE NUMBER LOGIN */}
+      {/* MODAL 4: PASSENGER ONBOARDING (NAME, EMAIL & PHONE OTP) */}
       {showLoginModal && (
         <div className="modal-backdrop no-print">
-          <div className="modal-box" style={{ maxWidth: '380px' }}>
+          <div className="modal-box" style={{ maxWidth: '420px' }}>
             <div className="modal-header">
-              <h3>Passenger Sign In</h3>
-              <button type="button" className="close-btn" onClick={() => setShowLoginModal(false)}>✕</button>
+              <h3>{loginStep === 'DETAILS' ? 'Passenger Verification' : 'Verify Mobile OTP'}</h3>
+              <button 
+                type="button" 
+                className="close-btn" 
+                onClick={() => {
+                  setShowLoginModal(false)
+                  setLoginStep('DETAILS')
+                }}
+              >
+                ✕
+              </button>
             </div>
-            <form onSubmit={handleLoginSubmit}>
-              <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '1.2rem', lineHeight: '1.4' }}>
-                Enter your 10-digit mobile number to view and manage your booked tickets.
-              </p>
-              <div className="form-group">
-                <label>Mobile Number</label>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, color: '#334155', fontSize: '0.95rem' }}>+91</span>
+
+            {loginStep === 'DETAILS' ? (
+              <form onSubmit={handleRequestOtp}>
+                <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '1.2rem', lineHeight: '1.4' }}>
+                  Enter your details to receive booking confirmations and manage ticket resale payouts.
+                </p>
+
+                <div className="form-group">
+                  <label>Full Name</label>
                   <input
-                    type="tel"
+                    type="text"
                     required
-                    autoFocus
-                    maxLength="10"
-                    pattern="[0-9]{10}"
-                    placeholder="e.g. 9876543210"
-                    value={loginInputPhone}
-                    onChange={(e) => setLoginInputPhone(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Enter your full name"
+                    value={loginForm.name}
+                    onChange={(e) => setLoginForm({ ...loginForm, name: e.target.value })}
                   />
                 </div>
-              </div>
-              <button type="submit" className="confirm-btn" style={{ marginTop: '1.2rem', width: '100%' }}>
-                Continue ➔
-              </button>
-            </form>
+
+                <div className="form-group">
+                  <label>Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="name@example.com"
+                    value={loginForm.email}
+                    onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Mobile Number (For SMS OTP)</label>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600, color: '#334155', fontSize: '0.95rem' }}>+91</span>
+                    <input
+                      type="tel"
+                      required
+                      maxLength="10"
+                      pattern="[0-9]{10}"
+                      placeholder="10-digit mobile"
+                      value={loginForm.phone}
+                      onChange={(e) => setLoginForm({ ...loginForm, phone: e.target.value.replace(/\D/g, '') })}
+                    />
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  className="confirm-btn" 
+                  disabled={isSendingOtp}
+                  style={{ marginTop: '1.2rem', width: '100%' }}
+                >
+                  {isSendingOtp ? 'Sending OTP...' : 'Send OTP via SMS ➔'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyOtp}>
+                <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '1.2rem', lineHeight: '1.4' }}>
+                  Enter the 4-digit code sent to <strong>+91 {loginForm.phone}</strong>
+                </p>
+
+                <div className="form-group">
+                  <label>Enter 4-Digit OTP</label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    maxLength="4"
+                    pattern="[0-9]{4}"
+                    placeholder="••••"
+                    style={{ textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.4rem', fontWeight: 'bold' }}
+                    value={otpInput}
+                    onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.8rem', marginTop: '1.2rem' }}>
+                  <button
+                    type="button"
+                    className="select-seat-btn"
+                    style={{ flex: 1 }}
+                    onClick={() => setLoginStep('DETAILS')}
+                  >
+                    ← Edit Details
+                  </button>
+                  <button
+                    type="submit"
+                    className="confirm-btn"
+                    disabled={isVerifyingOtp}
+                    style={{ flex: 2 }}
+                  >
+                    {isVerifyingOtp ? 'Verifying...' : 'Verify & Continue'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
