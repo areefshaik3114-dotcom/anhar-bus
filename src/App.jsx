@@ -705,6 +705,30 @@ export default function App() {
     }
   }
 
+  // redBus-Style Ticket Cancellation & Instant Wallet Refund Engine
+  const handleCancelBooking = async (booking) => {
+    const confirmMsg = `Are you sure you want to cancel Ticket PNR: ${booking.pnr}?\n\nCancellation Policy:\n• >24 hrs: 10% charge (90% refund)\n• 12-24 hrs: 25% charge (75% refund)\n• 2-12 hrs: 50% charge (50% refund)\n• <2 hrs: Non-refundable\n\nRefund will be credited instantly to your ANHAR Wallet.`
+
+    if (!window.confirm(confirmMsg)) return
+
+    try {
+      const res = await api.cancelBooking(booking.pnr)
+      if (res && res.success) {
+        alert(`Ticket Cancelled Successfully!\n\n• Deduction: ${res.deductionPct}% (₹${res.deductionAmount})\n• Refunded: ₹${res.refundAmount}\n• New Wallet Balance: ₹${res.newBalance}`)
+        
+        // Update wallet state and fetch latest bookings from MongoDB Atlas
+        if (currentUser) {
+          setWalletBalance(res.newBalance)
+        }
+        await fetchLatestData()
+      } else {
+        alert(res?.message || 'Failed to cancel booking.')
+      }
+    } catch (err) {
+      alert('Network error while processing cancellation.')
+    }
+  }
+
   const swapCities = () => {
     const temp = source
     setSource(destination)
@@ -1097,7 +1121,7 @@ export default function App() {
         <main className="results-container no-print">
           <div className="section-title-row">
             <h2>My Bookings</h2>
-            <p>View tickets, print conductor boarding passes, or list seats for resale</p>
+            <p>View tickets, print conductor boarding passes, list seats for resale, or cancel tickets</p>
           </div>
 
           {!currentUser ? (
@@ -1125,7 +1149,9 @@ export default function App() {
                       <p className="route-sub">{b.route} • {b.journeyDate} at {b.departure}</p>
                       <p className="points-sub">📍 <strong>Boarding:</strong> {b.boarding} | 🎯 <strong>Drop:</strong> {b.dropping}</p>
                     </div>
-                    <div className="booking-status-badge">{b.status}</div>
+                    <div className={`booking-status-badge ${b.status === 'CANCELLED' ? 'status-cancelled' : ''}`}>
+                      {b.status}
+                    </div>
                   </div>
 
                   <div className="passenger-seat-list">
@@ -1148,10 +1174,29 @@ export default function App() {
                       <button className="view-ticket-btn" onClick={() => setViewTicket(b)}>
                         🖨️ View & Print Ticket
                       </button>
-                      {b.passengers && b.passengers.length > 0 && b.status !== 'VERIFIED_RESALE_TICKET' && (
-                        <button className="resale-trigger-btn" onClick={() => openResaleModal(b)}>
-                          🔄 Resale Seats ({b.passengers.length})
-                        </button>
+                      {b.status === 'CONFIRMED' && (
+                        <>
+                          {b.passengers && b.passengers.length > 0 && (
+                            <button className="resale-trigger-btn" onClick={() => openResaleModal(b)}>
+                              🔄 Resale Seats ({b.passengers.length})
+                            </button>
+                          )}
+                          <button 
+                            className="cancel-ticket-btn" 
+                            style={{
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: '1px solid #f87171',
+                              padding: '0.45rem 0.8rem',
+                              borderRadius: '6px',
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => handleCancelBooking(b)}
+                          >
+                            ✕ Cancel Ticket
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
