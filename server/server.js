@@ -40,7 +40,10 @@ app.use(express.json());
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log(' Connected to MongoDB Atlas successfully!'))
+  .then(() => {
+    console.log(' Connected to MongoDB Atlas successfully!');
+    startResaleCleanupWorker();
+  })
   .catch((err) => console.error(' MongoDB Connection Error:', err.message));
 
 // Reusable Fast2SMS Quick Route Dispatch Helper
@@ -75,6 +78,70 @@ const sendQuickSms = async (phone, message) => {
   }
 };
 
+// --- BACKGROUND WORKER: EXPIRED RESALE CLEANUP & SEAT RESTORATION ---
+const cleanupExpiredResaleListings = async () => {
+  try {
+    const now = Date.now();
+    const expiredListings = await ResaleListing.find({
+      status: 'AVAILABLE',
+      cutoffTimestamp: { $lte: now }
+    });
+
+    if (expiredListings.length === 0) return;
+
+    console.log(`[Resale Cleanup] Found ${expiredListings.length} expired resale listing(s). Processing reversion...`);
+
+    for (const item of expiredListings) {
+      // 1. Mark listing as EXPIRED
+      item.status = 'EXPIRED';
+      await item.save();
+
+      // 2. Revert seat to original booking if sellerPnr exists
+      if (item.sellerPnr) {
+        const originalBooking = await Booking.findOne({ pnr: item.sellerPnr });
+
+        if (originalBooking) {
+          const seatAlreadyRestored = (originalBooking.passengers || []).some(
+            p => Number(p.seatNumber) === Number(item.seatNumber)
+          );
+
+          if (!seatAlreadyRestored) {
+            originalBooking.passengers.push({
+              seatNumber: Number(item.seatNumber),
+              name: item.sellerName || 'Passenger',
+              age: 25,
+              gender: 'Male'
+            });
+
+            // Recalculate status and paid fare
+            originalBooking.totalPaid = originalBooking.passengers.length * (originalBooking.unitPrice || item.originalPrice);
+            originalBooking.status = 'CONFIRMED';
+            await originalBooking.save();
+            console.log(`[Seat Restored] Seat ${item.seatNumber} returned to PNR ${item.sellerPnr}`);
+          }
+        }
+      }
+
+      // 3. Notify original seller via SMS that resale closed and their seat is safe
+      const sellerPhone = item.sellerPhone || (item.contact && item.contact.phone);
+      if (sellerPhone) {
+        const cleanSellerPhone = String(sellerPhone).replace(/\D/g, '').slice(-10);
+        const revertMsg = `ANHAR BUS Update: Resale window closed for Seat ${item.seatNumber} (${item.busName}). Your seat has been restored to your booking. Happy Journey!`;
+        await sendQuickSms(cleanSellerPhone, revertMsg);
+      }
+    }
+  } catch (err) {
+    console.error('[Resale Cleanup Error]:', err.message);
+  }
+};
+
+// Run background worker every 60 seconds
+const startResaleCleanupWorker = () => {
+  console.log(' Resale Auto-Cleanup Worker running (Interval: 60s)');
+  cleanupExpiredResaleListings();
+  setInterval(cleanupExpiredResaleListings, 60 * 1000);
+};
+
 // Health check
 app.get('/', (req, res) => {
   res.send('ANHAR BUS Backend Server is live!');
@@ -95,7 +162,6 @@ app.post('/api/bookings', async (req, res) => {
   try {
     const newBooking = await Booking.create(req.body);
 
-    // Send instant SMS confirmation to passenger phone
     if (newBooking.contact?.phone) {
       const seats = (newBooking.passengers || []).map(p => p.seatNumber).join(', ');
       const msg = `ANHAR BUS Booking Confirmed! PNR: ${newBooking.pnr}, Route: ${newBooking.route}, Date: ${newBooking.journeyDate} at ${newBooking.departure}, Seats: [${seats}]. Boarding: ${newBooking.boarding}. Happy Journey!`;
@@ -170,10 +236,8 @@ app.post('/api/resale/buy', async (req, res) => {
 
     const createdTicket = await Booking.create(buyerBooking);
 
-    // Multi-tier seller phone lookup
     let rawSellerPhone = item.sellerPhone || (item.contact && item.contact.phone) || buyerBooking.sellerPhone;
 
-    // If missing on the listing document, query the original booking record by sellerPnr
     if (!rawSellerPhone && (item.sellerPnr || buyerBooking.sellerPnr)) {
       const targetPnr = item.sellerPnr || buyerBooking.sellerPnr;
       const originalBooking = await Booking.findOne({ pnr: targetPnr });
@@ -184,7 +248,6 @@ app.post('/api/resale/buy', async (req, res) => {
 
     console.log(`[Resale Purchase] Resolved Seller Phone:`, rawSellerPhone);
 
-    // 1. Credit seller and dispatch automated payout SMS (Anti-Spam Filter Compliant)
     if (rawSellerPhone) {
       const cleanSellerPhone = String(rawSellerPhone).replace(/\D/g, '').slice(-10);
       const updatedSeller = await User.findOneAndUpdate(
@@ -202,7 +265,6 @@ app.post('/api/resale/buy', async (req, res) => {
       console.error('[Resale Payout Warning] Could not resolve seller phone for item:', item.id);
     }
 
-    // 2. Dispatch ticket confirmation SMS to the resale buyer
     if (createdTicket.contact?.phone) {
       const buyerMsg = `ANHAR BUS Verified Resale Confirmed! PNR: ${createdTicket.pnr}, Bus: ${createdTicket.busName}, Seat: ${item.seatNumber}, Date: ${createdTicket.journeyDate} at ${createdTicket.departure}. Have a safe journey!`;
       const buyerStatus = await sendQuickSms(createdTicket.contact.phone, buyerMsg);
