@@ -39,15 +39,42 @@ export default function App() {
   const [selectedBoardingPoint, setSelectedBoardingPoint] = useState('')
   const [selectedDroppingPoint, setSelectedDroppingPoint] = useState('')
 
-  // In-App Wallet balance
-  const [walletBalance, setWalletBalance] = useState(500)
-
   // User Session & Login Modal State
   const [currentUser, setCurrentUser] = useState(() => {
     return localStorage.getItem('anhar_user_phone') || ''
   })
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [loginInputPhone, setLoginInputPhone] = useState('')
+
+  // In-App Wallet balance (persisted per mobile number)
+  const [walletBalance, setWalletBalance] = useState(() => {
+    const savedPhone = localStorage.getItem('anhar_user_phone')
+    if (!savedPhone) return 500
+    const savedBal = localStorage.getItem(`anhar_wallet_${savedPhone}`)
+    return savedBal !== null ? Number(savedBal) : 500
+  })
+
+  // Synchronize wallet when switching accounts
+  useEffect(() => {
+    if (currentUser) {
+      const savedBal = localStorage.getItem(`anhar_wallet_${currentUser}`)
+      if (savedBal !== null) {
+        setWalletBalance(Number(savedBal))
+      } else {
+        localStorage.setItem(`anhar_wallet_${currentUser}`, '500')
+        setWalletBalance(500)
+      }
+    } else {
+      setWalletBalance(500)
+    }
+  }, [currentUser])
+
+  const updateCurrentUserWallet = (newBal) => {
+    setWalletBalance(newBal)
+    if (currentUser) {
+      localStorage.setItem(`anhar_wallet_${currentUser}`, String(newBal))
+    }
+  }
 
   // Filter & Sort States
   const [selectedTypeFilter, setSelectedTypeFilter] = useState('ALL')
@@ -392,7 +419,7 @@ export default function App() {
 
     if (useWalletOffset && walletBalance > 0) {
       deduction = Math.min(walletBalance, pendingBookingData.grandTotal)
-      setWalletBalance(prev => prev - deduction)
+      updateCurrentUserWallet(walletBalance - deduction)
       remainingToPay -= deduction
     }
 
@@ -472,6 +499,7 @@ export default function App() {
       resalePrice: resellingBooking.unitPrice + Number(resaleMarkup),
       sellerPnr: resellingBooking.pnr,
       sellerName: resellingBooking.passengers.find(p => p.seatNumber === seatNum)?.name || 'Passenger',
+      sellerPhone: resellingBooking.contact?.phone || currentUser, // Links resale payout to seller
       status: 'AVAILABLE'
     }))
 
@@ -550,10 +578,17 @@ export default function App() {
     const res = await api.buyResale(selectedResaleItem.id, newBuyerBooking)
 
     if (res.success) {
-      setWalletBalance(prev => prev + selectedResaleItem.resalePrice)
+      // Credit ONLY the seller's wallet
+      const sellerPhone = selectedResaleItem.sellerPhone
+      if (sellerPhone) {
+        const sellerWalletKey = `anhar_wallet_${sellerPhone}`
+        const currentSellerBal = Number(localStorage.getItem(sellerWalletKey) || 500)
+        localStorage.setItem(sellerWalletKey, String(currentSellerBal + selectedResaleItem.resalePrice))
+      }
+
       await fetchLatestData()
       setSelectedResaleItem(null)
-      alert(`Success! Ticket re-issued with PNR: ${newBuyerPnr} in ${buyerDetails.name}'s name. ₹${selectedResaleItem.resalePrice} added to ANHAR Wallet.`)
+      alert(`Success! Ticket re-issued with PNR: ${newBuyerPnr} in ${buyerDetails.name}'s name. ₹${selectedResaleItem.resalePrice} credited to seller's ANHAR Wallet.`)
       setActiveTab('my-bookings')
     } else {
       alert(res.message || 'Failed to complete resale ticket transaction.')
@@ -573,7 +608,7 @@ export default function App() {
   const addFundsToWallet = () => {
     const amount = Number(prompt('Enter amount to add to ANHAR Wallet (₹):', '500'))
     if (amount > 0) {
-      setWalletBalance(prev => prev + amount)
+      updateCurrentUserWallet(walletBalance + amount)
       alert(`₹${amount} added successfully to your ANHAR Wallet!`)
     }
   }
