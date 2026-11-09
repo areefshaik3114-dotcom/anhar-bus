@@ -43,6 +43,35 @@ mongoose
   .then(() => console.log(' Connected to MongoDB Atlas successfully!'))
   .catch((err) => console.error(' MongoDB Connection Error:', err.message));
 
+// Reusable Fast2SMS Quick Route Dispatch Helper
+const sendQuickSms = async (phone, message) => {
+  const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+  if (!process.env.FAST2SMS_API_KEY || cleanPhone.length !== 10) return false;
+
+  try {
+    const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+      method: 'POST',
+      headers: {
+        'authorization': process.env.FAST2SMS_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        route: 'q',
+        message: message,
+        language: 'english',
+        flash: 0,
+        numbers: cleanPhone
+      })
+    });
+    const result = await smsResponse.json();
+    console.log(`[Transactional SMS Result to +91 ${cleanPhone}]:`, result);
+    return result.return;
+  } catch (err) {
+    console.error(`[Transactional SMS Error to +91 ${cleanPhone}]:`, err.message);
+    return false;
+  }
+};
+
 // Health check
 app.get('/', (req, res) => {
   res.send('ANHAR BUS Backend Server is live!');
@@ -58,10 +87,18 @@ app.get('/api/bookings', async (req, res) => {
   }
 });
 
-// 2. Save a new booking
+// 2. Save a new booking & send Transactional Confirmation SMS
 app.post('/api/bookings', async (req, res) => {
   try {
     const newBooking = await Booking.create(req.body);
+
+    // Send instant SMS confirmation to passenger phone
+    if (newBooking.contact?.phone) {
+      const seats = (newBooking.passengers || []).map(p => p.seatNumber).join(', ');
+      const msg = `ANHAR BUS Booking Confirmed! PNR: ${newBooking.pnr}, Route: ${newBooking.route}, Date: ${newBooking.journeyDate} at ${newBooking.departure}, Seats: [${seats}]. Boarding: ${newBooking.boarding}. Happy Journey!`;
+      sendQuickSms(newBooking.contact.phone, msg);
+    }
+
     res.status(201).json({ success: true, booking: newBooking });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -110,7 +147,7 @@ app.post('/api/resale', async (req, res) => {
   }
 });
 
-// 5. Purchase a resale ticket & credit seller directly in MongoDB
+// 5. Purchase a resale ticket, credit seller & dispatch confirmation SMS to buyer
 app.post('/api/resale/buy', async (req, res) => {
   try {
     const { resaleId, buyerBooking } = req.body;
@@ -130,19 +167,21 @@ app.post('/api/resale/buy', async (req, res) => {
 
     const createdTicket = await Booking.create(buyerBooking);
 
+    // Credit seller directly in MongoDB
     const targetPhone = item.sellerPhone || (item.contact && item.contact.phone);
-    console.log(`[Resale Payout] Crediting ₹${item.resalePrice} to seller phone:`, targetPhone);
-
     if (targetPhone) {
       const cleanPhone = String(targetPhone).replace(/\D/g, '').slice(-10);
-      const updatedUser = await User.findOneAndUpdate(
+      await User.findOneAndUpdate(
         { phone: cleanPhone },
         { $inc: { walletBalance: Number(item.resalePrice) } },
         { new: true, upsert: true }
       );
-      console.log(`[Resale Payout Success] New balance for ${cleanPhone}: ₹${updatedUser.walletBalance}`);
-    } else {
-      console.error('[Resale Payout Warning] No valid seller phone found on this listing item!');
+    }
+
+    // Send SMS Confirmation to the resale ticket buyer
+    if (createdTicket.contact?.phone) {
+      const msg = `ANHAR BUS Verified Resale Confirmed! PNR: ${createdTicket.pnr}, Bus: ${createdTicket.busName}, Seat: ${item.seatNumber}, Date: ${createdTicket.journeyDate} at ${createdTicket.departure}. Have a safe journey!`;
+      sendQuickSms(createdTicket.contact.phone, msg);
     }
 
     res.status(201).json({ success: true, booking: createdTicket });
@@ -197,32 +236,10 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
     console.log(`[SMS OTP Generated] Phone: +91 ${cleanPhone} | OTP: ${otp}`);
 
-    if (process.env.FAST2SMS_API_KEY) {
-      const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-        method: 'POST',
-        headers: {
-          'authorization': process.env.FAST2SMS_API_KEY,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          route: 'q',
-          message: `Your ANHAR BUS verification code is ${otp}. Valid for 5 minutes. Do not share this OTP.`,
-          language: 'english',
-          flash: 0,
-          numbers: cleanPhone
-        })
-      });
+    const otpMsg = `Your ANHAR BUS verification code is ${otp}. Valid for 5 minutes. Do not share this OTP.`;
+    const sent = await sendQuickSms(cleanPhone, otpMsg);
 
-      const smsResult = await smsResponse.json();
-      console.log('[Fast2SMS Result]:', smsResult);
-
-      if (!smsResult.return) {
-        return res.status(500).json({
-          success: false,
-          message: smsResult.message || 'Failed to dispatch SMS'
-        });
-      }
-
+    if (sent) {
       return res.json({
         success: true,
         message: `OTP sent via SMS to +91 ${cleanPhone}`
