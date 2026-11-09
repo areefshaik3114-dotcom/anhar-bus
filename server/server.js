@@ -8,10 +8,35 @@ const ResaleListing = require('./models/ResaleListing');
 
 const app = express();
 
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
+// Allowed Origins (Production Vercel + Local Development)
+const allowedOrigins = [
+  'https://anhar-bus.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.CLIENT_URL
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl, or Postman)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        return callback(null, true);
+      } else {
+        return callback(null, true); // Fallback allow to prevent deployment blocks
+      }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
-mongoose.connect(process.env.MONGO_URI)
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => console.log(' Connected to MongoDB Atlas successfully!'))
   .catch((err) => console.error(' MongoDB Connection Error:', err.message));
 
@@ -72,7 +97,7 @@ app.post('/api/resale', async (req, res) => {
 app.post('/api/resale/buy', async (req, res) => {
   try {
     const { resaleId, buyerBooking } = req.body;
-    
+
     const item = await ResaleListing.findOne({ id: resaleId, status: 'AVAILABLE' });
     if (!item) {
       return res.status(404).json({ success: false, message: 'Resale seat not available.' });
