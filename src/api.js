@@ -45,6 +45,16 @@ export const api = {
     return res.json()
   },
 
+  // 5.5 Cancel booking with redBus tiered refund & wallet credit
+  cancelBooking: async (pnr) => {
+    const res = await fetch(`${API_BASE}/api/bookings/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pnr })
+    })
+    return res.json()
+  },
+
   // 6. MongoDB Atlas User Wallet Endpoints
   getWallet: async (phone) => {
     const res = await fetch(`${API_BASE}/api/wallet/${phone}`)
