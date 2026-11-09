@@ -278,6 +278,83 @@ app.post('/api/resale/buy', async (req, res) => {
   }
 });
 
+// 5.5 Cancel a Booking with Tiered redBus Refund & Wallet Credit
+app.post('/api/bookings/cancel', async (req, res) => {
+  try {
+    const { pnr } = req.body;
+    if (!pnr) {
+      return res.status(400).json({ success: false, message: 'PNR is required for cancellation.' });
+    }
+
+    const booking = await Booking.findOne({ pnr });
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found.' });
+    }
+
+    if (booking.status === 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'Ticket is already cancelled.' });
+    }
+
+    // 1. Calculate time remaining until departure
+    const departureStr = booking.departure?.trim() || '00:00';
+    const departureIso = `${booking.journeyDate}T${departureStr.length === 5 ? departureStr : '0' + departureStr}:00`;
+    const departureTimestamp = new Date(departureIso).getTime();
+    const diffHours = (departureTimestamp - Date.now()) / (1000 * 60 * 60);
+
+    let deductionPct = 100;
+    if (diffHours >= 24) {
+      deductionPct = 10;
+    } else if (diffHours >= 12 && diffHours < 24) {
+      deductionPct = 25;
+    } else if (diffHours >= 2 && diffHours < 12) {
+      deductionPct = 50;
+    } else {
+      deductionPct = 100;
+    }
+
+    const totalFare = Number(booking.totalPaid || booking.baseFare || 0);
+    const deductionAmount = Math.round((totalFare * deductionPct) / 100);
+    const refundAmount = Math.max(0, totalFare - deductionAmount);
+
+    // 2. Mark booking as CANCELLED in MongoDB Atlas (Instantly frees seats on seat map)
+    booking.status = 'CANCELLED';
+    await booking.save();
+
+    // 3. Remove any active resale listings tied to this PNR
+    await ResaleListing.deleteMany({ sellerPnr: pnr, status: 'AVAILABLE' });
+
+    // 4. Credit refund to passenger's ANHAR wallet in MongoDB Atlas
+    let newBalance = 0;
+    const phone = booking.contact?.phone;
+    if (phone && refundAmount > 0) {
+      const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+      const updatedUser = await User.findOneAndUpdate(
+        { phone: cleanPhone },
+        { $inc: { walletBalance: refundAmount } },
+        { new: true, upsert: true }
+      );
+      newBalance = updatedUser.walletBalance;
+
+      // 5. Dispatch Cancellation Confirmation SMS via Fast2SMS
+      const cancelMsg = `ANHAR BUS Update: Booking ${pnr} has been cancelled. Rs ${refundAmount} credited to your wallet (Charge: ${deductionPct}%). New Balance: Rs ${newBalance}.`;
+      await sendQuickSms(cleanPhone, cancelMsg);
+    }
+
+    res.json({
+      success: true,
+      pnr,
+      deductionPct,
+      deductionAmount,
+      refundAmount,
+      newBalance,
+      message: `Ticket cancelled. Rs ${refundAmount} credited to ANHAR Wallet.`
+    });
+  } catch (err) {
+    console.error('[Cancellation Error]:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 6. Get or create user wallet in MongoDB Atlas
 app.get('/api/wallet/:phone', async (req, res) => {
   try {
