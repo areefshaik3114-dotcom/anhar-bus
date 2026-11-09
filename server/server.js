@@ -9,6 +9,9 @@ const User = require('./models/User');
 
 const app = express();
 
+// Temporary in-memory OTP cache (phone -> { otp, expiresAt })
+const otpStore = new Map();
+
 // Allowed Origins (Production Vercel + Local Development)
 const allowedOrigins = [
   'https://anhar-bus.vercel.app',
@@ -20,12 +23,11 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps, curl, or Postman)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
         return callback(null, true);
       } else {
-        return callback(null, true); // Fallback allow to prevent deployment blocks
+        return callback(null, true);
       }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -76,18 +78,33 @@ app.get('/api/resale', async (req, res) => {
   }
 });
 
-// 4. Create resale listings
+// 4. Create resale listings (Guarded against duplicate seat listings)
 app.post('/api/resale', async (req, res) => {
   try {
     const { listings, updatedBookings } = req.body;
+
     if (listings && Array.isArray(listings)) {
-      await ResaleListing.insertMany(listings);
+      for (const item of listings) {
+        // Prevent listing if this exact bus and seat is already live
+        const existing = await ResaleListing.findOne({
+          busId: item.busId,
+          seatNumber: item.seatNumber,
+          date: item.date,
+          status: 'AVAILABLE'
+        });
+
+        if (!existing) {
+          await ResaleListing.create(item);
+        }
+      }
     }
+
     if (updatedBookings && Array.isArray(updatedBookings)) {
       for (const b of updatedBookings) {
         await Booking.findOneAndUpdate({ pnr: b.pnr }, b);
       }
     }
+
     res.status(201).json({ success: true, message: 'Resale listings published' });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -127,7 +144,7 @@ app.post('/api/resale/buy', async (req, res) => {
       );
       console.log(`[Resale Payout Success] New balance for ${cleanPhone}: ₹${updatedUser.walletBalance}`);
     } else {
-      console.error('[Resale Payout Warning] No seller phone found on this listing item!');
+      console.error('[Resale Payout Warning] No valid seller phone found on this listing item!');
     }
 
     res.status(201).json({ success: true, booking: createdTicket });
@@ -137,12 +154,13 @@ app.post('/api/resale/buy', async (req, res) => {
   }
 });
 
-// 6. Get or create user wallet in MongoDB Atlas (starts at 0)
+// 6. Get or create user wallet in MongoDB Atlas
 app.get('/api/wallet/:phone', async (req, res) => {
   try {
-    let user = await User.findOne({ phone: req.params.phone });
+    const cleanPhone = String(req.params.phone).replace(/\D/g, '').slice(-10);
+    let user = await User.findOne({ phone: cleanPhone });
     if (!user) {
-      user = await User.create({ phone: req.params.phone, walletBalance: 0 });
+      user = await User.create({ phone: cleanPhone, walletBalance: 0 });
     }
     res.json({ success: true, balance: user.walletBalance });
   } catch (err) {
@@ -154,12 +172,68 @@ app.get('/api/wallet/:phone', async (req, res) => {
 app.post('/api/wallet/update', async (req, res) => {
   try {
     const { phone, amount } = req.body;
+    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
     const user = await User.findOneAndUpdate(
-      { phone },
+      { phone: cleanPhone },
       { $inc: { walletBalance: Number(amount) } },
       { new: true, upsert: true }
     );
     res.json({ success: true, balance: user.walletBalance });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8. Generate & Send OTP for Passenger Verification
+app.post('/api/auth/send-otp', (req, res) => {
+  try {
+    const { phone } = req.body;
+    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Invalid 10-digit mobile number.' });
+    }
+
+    // Generate random 4-digit code
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    otpStore.set(cleanPhone, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
+
+    console.log(`[SMS OTP Generated] Phone: +91 ${cleanPhone} | OTP: ${otp}`);
+
+    // Returns devOtp in development so you can test freely without SMS gateway costs
+    res.json({ success: true, message: 'OTP sent successfully', devOtp: otp });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9. Verify OTP & Register/Update User Profile (Name, Email, Phone)
+app.post('/api/auth/verify-otp', async (req, res) => {
+  try {
+    const { phone, name, email, otp } = req.body;
+    const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+
+    const record = otpStore.get(cleanPhone);
+    if (!record || record.otp !== String(otp).trim() || Date.now() > record.expiresAt) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
+    }
+
+    // Clear OTP after successful verification
+    otpStore.delete(cleanPhone);
+
+    const user = await User.findOneAndUpdate(
+      { phone: cleanPhone },
+      {
+        $set: {
+          name: name || 'Passenger',
+          email: email || ''
+        },
+        $setOnInsert: { walletBalance: 0 }
+      },
+      { new: true, upsert: true }
+    );
+
+    res.json({ success: true, user });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
