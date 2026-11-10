@@ -40,32 +40,43 @@ export default function App() {
   const [selectedDroppingPoint, setSelectedDroppingPoint] = useState('')
 
   // User Session & Login Modal State
-  const [currentUser, setCurrentUser] = useState(() => {
-    return localStorage.getItem('anhar_user_phone') || ''
-  })
-  const [currentUserName, setCurrentUserName] = useState(() => {
-    return localStorage.getItem('anhar_user_name') || ''
-  })
-  const [currentUserEmail, setCurrentUserEmail] = useState(() => {
-    return localStorage.getItem('anhar_user_email') || ''
-  })
+  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('anhar_user_phone') || '')
+  const [currentUserName, setCurrentUserName] = useState(() => localStorage.getItem('anhar_user_name') || '')
+  const [currentUserEmail, setCurrentUserEmail] = useState(() => localStorage.getItem('anhar_user_email') || '')
 
   // OTP Verification States
   const [showLoginModal, setShowLoginModal] = useState(false)
-  const [loginStep, setLoginStep] = useState('DETAILS') // 'DETAILS' | 'OTP'
-  const [loginForm, setLoginForm] = useState({
-    name: '',
-    email: '',
-    phone: ''
-  })
+  const [loginStep, setLoginStep] = useState('DETAILS')
+  const [loginForm, setLoginForm] = useState({ name: '', email: '', phone: '' })
   const [otpInput, setOtpInput] = useState('')
   const [isSendingOtp, setIsSendingOtp] = useState(false)
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false)
 
-  // In-App Wallet balance (persisted in MongoDB Atlas, starts at 0)
+  // In-App Wallet balance
   const [walletBalance, setWalletBalance] = useState(0)
 
-  // Fetch real-time wallet balance from MongoDB whenever user logs in or switches
+  // Dynamic Buses from MongoDB
+  const [dbBuses, setDbBuses] = useState([])
+  const [selectedManifestBus, setSelectedManifestBus] = useState(null)
+  const [manifestList, setManifestList] = useState([])
+  const [isLoadingManifest, setIsLoadingManifest] = useState(false)
+  const [showAddBusModal, setShowAddBusModal] = useState(false)
+  const [newBusForm, setNewBusForm] = useState({
+    name: '',
+    busNumber: '',
+    operatorPhone: '',
+    source: 'Bengaluru',
+    destination: 'Hyderabad',
+    departure: '21:30',
+    departureHour: 21.5,
+    arrival: '06:00',
+    price: 950,
+    category: 'AC Sleeper',
+    type: '2+1 Executive AC Sleeper',
+    totalSeats: 24
+  })
+
+  // Fetch real-time wallet
   useEffect(() => {
     const fetchUserWallet = async () => {
       if (currentUser) {
@@ -104,13 +115,9 @@ export default function App() {
   const [useWalletOffset, setUseWalletOffset] = useState(false)
   const [pendingBookingData, setPendingBookingData] = useState(null)
 
-  // Active User Bookings (Persisted in MongoDB)
+  // Active User Bookings
   const [myBookings, setMyBookings] = useState([])
-
-  // Printable Ticket Modal State
   const [viewTicket, setViewTicket] = useState(null)
-
-  // Real-time Cutoff Tracker
   const [currentTime, setCurrentTime] = useState(new Date())
 
   useEffect(() => {
@@ -118,134 +125,36 @@ export default function App() {
     return () => clearInterval(timer)
   }, [])
 
-  // Resale Marketplace Listings (Persisted in MongoDB)
+  // Resale Marketplace Listings
   const [resaleListings, setResaleListings] = useState([])
 
   // Helper to refresh data from MongoDB
   const fetchLatestData = async () => {
     try {
-      const [dbBookings, dbResale] = await Promise.all([
+      const [dbBookings, dbResale, dynamicBuses] = await Promise.all([
         api.getBookings(),
-        api.getResaleListings()
+        api.getResaleListings(),
+        api.searchBuses(source, destination)
       ])
-      if (Array.isArray(dbBookings)) {
-        setMyBookings(dbBookings)
-      }
-      if (Array.isArray(dbResale)) {
-        setResaleListings(dbResale)
-      }
+      if (Array.isArray(dbBookings)) setMyBookings(dbBookings)
+      if (Array.isArray(dbResale)) setResaleListings(dbResale)
+      if (Array.isArray(dynamicBuses) && dynamicBuses.length > 0) setDbBuses(dynamicBuses)
     } catch (err) {
       console.error('Failed to load records from MongoDB:', err)
     }
   }
 
-  // Initial Load from MongoDB Atlas
   useEffect(() => {
     fetchLatestData()
-  }, [])
+  }, [source, destination])
 
-  // User personal bookings filtered by logged-in phone number
   const userPersonalBookings = useMemo(() => {
     if (!currentUser) return []
     return myBookings.filter(b => b.contact?.phone === currentUser)
   }, [myBookings, currentUser])
 
-  // Login via Phone OTP Handlers
-  const handleRequestOtp = async (e) => {
-    e.preventDefault()
-    const cleanPhone = loginForm.phone.trim().replace(/\D/g, '').slice(-10)
-    if (cleanPhone.length !== 10) {
-      alert('Please enter a valid 10-digit mobile number.')
-      return
-    }
-
-    setIsSendingOtp(true)
-    try {
-      const res = await api.sendOtp(cleanPhone)
-      if (res && res.success) {
-        setLoginStep('OTP')
-        if (res.devOtp) {
-          alert(`Gateway offline. Use dev code: ${res.devOtp}`)
-        } else {
-          alert(`OTP successfully sent to +91 ${cleanPhone}. Please check your SMS inbox.`)
-        }
-      } else {
-        alert(res?.message || 'Failed to send OTP. Please try again.')
-      }
-    } catch (err) {
-      alert('Error contacting verification service. Please try again.')
-    } finally {
-      setIsSendingOtp(false)
-    }
-  }
-
-  const handleVerifyOtp = async (e) => {
-    e.preventDefault()
-    const cleanPhone = loginForm.phone.trim().replace(/\D/g, '').slice(-10)
-
-    setIsVerifyingOtp(true)
-    try {
-      const res = await api.verifyOtp({
-        phone: cleanPhone,
-        name: loginForm.name.trim(),
-        email: loginForm.email.trim(),
-        otp: otpInput.trim()
-      })
-
-      if (res && res.success) {
-        localStorage.setItem('anhar_user_phone', cleanPhone)
-        localStorage.setItem('anhar_user_name', loginForm.name.trim())
-        localStorage.setItem('anhar_user_email', loginForm.email.trim())
-
-        setCurrentUser(cleanPhone)
-        setCurrentUserName(loginForm.name.trim())
-        setCurrentUserEmail(loginForm.email.trim())
-        setContactInfo({ phone: cleanPhone, email: loginForm.email.trim() })
-
-        setShowLoginModal(false)
-        setLoginStep('DETAILS')
-        setLoginForm({ name: '', email: '', phone: '' })
-        setOtpInput('')
-        alert(`Welcome, ${loginForm.name.trim() || 'Passenger'}! You are now verified.`)
-      } else {
-        alert(res?.message || 'Invalid or expired OTP. Please try again.')
-      }
-    } catch (err) {
-      alert('Verification failed. Please check your network and retry.')
-    } finally {
-      setIsVerifyingOtp(false)
-    }
-  }
-
-  const handleLogout = () => {
-    localStorage.removeItem('anhar_user_phone')
-    localStorage.removeItem('anhar_user_name')
-    localStorage.removeItem('anhar_user_email')
-    setCurrentUser('')
-    setCurrentUserName('')
-    setCurrentUserEmail('')
-    setWalletBalance(0)
-    alert('Logged out successfully.')
-  }
-
-  // Partial Resale Selection Modal (Seller Side)
-  const [resellingBooking, setResellingBooking] = useState(null)
-  const [seatsToResell, setSeatsToResell] = useState([])
-  const [resaleMarkup, setResaleMarkup] = useState(0)
-  const [isSubmittingResale, setIsSubmittingResale] = useState(false)
-
-  // Resale Buyer Checkout Modal (Buyer Side)
-  const [selectedResaleItem, setSelectedResaleItem] = useState(null)
-  const [buyerDetails, setBuyerDetails] = useState({
-    name: '',
-    age: '',
-    gender: 'Male',
-    phone: '',
-    email: ''
-  })
-
-  // Comprehensive fleet with schedules and categories
-  const buses = [
+  // Default fleet fallback
+  const fallbackBuses = [
     {
       id: 1,
       name: 'ANHAR Super Luxury AC Sleeper',
@@ -258,7 +167,7 @@ export default function App() {
       duration: '8h 30m',
       rating: 4.8,
       price: 1150,
-      totalSeats: 30,
+      totalSeats: 24,
       availableSeats: 12,
       bookedSeats: [3, 7]
     },
@@ -274,100 +183,40 @@ export default function App() {
       duration: '8h 30m',
       rating: 4.9,
       price: 890,
-      totalSeats: 40,
+      totalSeats: 24,
       availableSeats: 8,
       bookedSeats: [2, 5]
-    },
-    {
-      id: 3,
-      name: 'ANHAR Express Seater (Morning Superfast)',
-      busNumber: 'AP 21 Z 1042',
-      type: '2+2 Highback Non-AC',
-      category: 'Non-AC',
-      departure: '07:30',
-      departureHour: 7.5,
-      arrival: '16:00',
-      duration: '8h 30m',
-      rating: 4.3,
-      price: 550,
-      totalSeats: 45,
-      availableSeats: 24,
-      bookedSeats: [1, 6]
-    },
-    {
-      id: 4,
-      name: 'ANHAR Royal Multi-Axle AC Sleeper',
-      busNumber: 'KA 53 EA 8810',
-      type: '2+1 Executive AC Sleeper',
-      category: 'AC Sleeper',
-      departure: '19:45',
-      departureHour: 19.75,
-      arrival: '04:15',
-      duration: '8h 30m',
-      rating: 4.7,
-      price: 1350,
-      totalSeats: 30,
-      availableSeats: 6,
-      bookedSeats: [4, 8, 9]
-    },
-    {
-      id: 5,
-      name: 'ANHAR Midnight Express Volvo',
-      busNumber: 'TS 08 UB 7712',
-      type: '2+2 Pushback AC',
-      category: 'Volvo',
-      departure: '23:45',
-      departureHour: 23.75,
-      arrival: '08:00',
-      duration: '8h 15m',
-      rating: 4.6,
-      price: 980,
-      totalSeats: 40,
-      availableSeats: 15,
-      bookedSeats: [11]
     }
   ]
 
-  // Filter & Sort Logic
+  const activeFleet = dbBuses.length > 0 ? dbBuses : fallbackBuses
+
   const filteredAndSortedBuses = useMemo(() => {
-    return buses
+    return activeFleet
       .filter((bus) => {
-        if (selectedTypeFilter !== 'ALL' && bus.category !== selectedTypeFilter) {
-          return false
-        }
-        if (selectedTimeSlot === 'MORNING' && (bus.departureHour < 6 || bus.departureHour >= 12)) {
-          return false
-        }
-        if (selectedTimeSlot === 'EVENING' && (bus.departureHour < 18 || bus.departureHour >= 23)) {
-          return false
-        }
-        if (selectedTimeSlot === 'NIGHT' && bus.departureHour < 23) {
-          return false
-        }
+        if (selectedTypeFilter !== 'ALL' && bus.category !== selectedTypeFilter) return false
+        if (selectedTimeSlot === 'MORNING' && (bus.departureHour < 6 || bus.departureHour >= 12)) return false
+        if (selectedTimeSlot === 'EVENING' && (bus.departureHour < 18 || bus.departureHour >= 23)) return false
+        if (selectedTimeSlot === 'NIGHT' && bus.departureHour < 23) return false
         return true
       })
       .sort((a, b) => {
         if (sortBy === 'PRICE_ASC') return a.price - b.price
         if (sortBy === 'PRICE_DESC') return b.price - a.price
         if (sortBy === 'TIME_ASC') return a.departureHour - b.departureHour
-        if (sortBy === 'RATING_DESC') return b.rating - a.rating
+        if (sortBy === 'RATING_DESC') return (b.rating || 4.5) - (a.rating || 4.5)
         return 0
       })
-  }, [buses, selectedTypeFilter, selectedTimeSlot, sortBy])
+  }, [activeFleet, selectedTypeFilter, selectedTimeSlot, sortBy])
 
   const getCutoffCountdown = (cutoffTimestamp) => {
     const diff = cutoffTimestamp - currentTime.getTime()
-    if (diff <= 0) {
-      return { isExpired: true, text: 'Resale Window Closed' }
-    }
+    if (diff <= 0) return { isExpired: true, text: 'Resale Window Closed' }
     const hours = Math.floor(diff / (1000 * 60 * 60))
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
     const seconds = Math.floor((diff % (1000 * 60)) / 1000)
     const pad = (n) => String(n).padStart(2, '0')
-    return {
-      isExpired: false,
-      text: `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`
-    }
+    return { isExpired: false, text: `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s` }
   }
 
   useEffect(() => {
@@ -379,13 +228,10 @@ export default function App() {
     setSelectedDroppingPoint(defaultDropping)
   }, [source, destination])
 
-  // Checks ALL bookings across MongoDB so booked seats lock globally
   const isSeatBooked = (seatNum, busId) => {
-    const defaultBooked = buses.find(b => Number(b.id) === Number(busId))?.bookedSeats.includes(Number(seatNum))
-    if (defaultBooked) return true
-
+    const targetId = String(busId)
     return myBookings.some(booking => 
-      Number(booking.busId) === Number(busId) && 
+      String(booking.busId) === targetId && 
       booking.status !== 'ALL_RESOLD' &&
       booking.status !== 'CANCELLED' &&
       booking.passengers && 
@@ -394,8 +240,9 @@ export default function App() {
   }
 
   const handleSeatClick = (seatNumber, bus) => {
+    const currentBusId = bus._id || bus.id
     const resaleItem = resaleListings.find(
-      r => Number(r.busId) === Number(bus.id) && Number(r.seatNumber) === Number(seatNumber) && r.status === 'AVAILABLE'
+      r => String(r.busId) === String(currentBusId) && Number(r.seatNumber) === Number(seatNumber) && r.status === 'AVAILABLE'
     )
 
     if (resaleItem) {
@@ -416,14 +263,15 @@ export default function App() {
   }
 
   const openBusDetails = (bus) => {
-    if (selectedBus?.id === bus.id) {
+    const busKey = bus._id || bus.id
+    if (selectedBus && (selectedBus._id || selectedBus.id) === busKey) {
       setSelectedBus(null)
       setSelectedSeats([])
     } else {
       setSelectedBus(bus)
       setSelectedSeats([])
-      setSelectedBoardingPoint(CITY_POINTS[source][0].name)
-      setSelectedDroppingPoint(CITY_POINTS[destination][0].name)
+      setSelectedBoardingPoint(CITY_POINTS[source]?.[0]?.name || source)
+      setSelectedDroppingPoint(CITY_POINTS[destination]?.[0]?.name || destination)
     }
   }
 
@@ -458,7 +306,6 @@ export default function App() {
     const gstAmount = Math.round(baseFare * 0.05)
     const grandTotal = baseFare + gstAmount
 
-    // Auto-login passenger session with the booking phone number
     if (contactInfo.phone && contactInfo.phone !== currentUser) {
       const cleanPhone = contactInfo.phone.replace(/\D/g, '').slice(-10)
       localStorage.setItem('anhar_user_phone', cleanPhone)
@@ -503,7 +350,7 @@ export default function App() {
 
     const newBooking = {
       pnr: newPnr,
-      busId: pendingBookingData.bus.id,
+      busId: String(pendingBookingData.bus._id || pendingBookingData.bus.id),
       busName: pendingBookingData.bus.name,
       busNumber: pendingBookingData.bus.busNumber,
       route: `${source} → ${destination}`,
@@ -530,10 +377,7 @@ export default function App() {
       status: 'CONFIRMED'
     }
 
-    // Persist booking directly to MongoDB Atlas
     await api.createBooking(newBooking)
-
-    // Pull refreshed records from MongoDB
     await fetchLatestData()
 
     setShowPaymentModal(false)
@@ -544,6 +388,69 @@ export default function App() {
     alert(`Payment Successful! Ticket Confirmed with PNR: ${newPnr}`)
     setActiveTab('my-bookings')
   }
+
+  const handleCancelBooking = async (booking) => {
+    const confirmMsg = `Are you sure you want to cancel Ticket PNR: ${booking.pnr}?\n\nCancellation Policy:\n• >24 hrs: 10% charge (90% refund)\n• 12-24 hrs: 25% charge (75% refund)\n• 2-12 hrs: 50% charge (50% refund)\n• <2 hrs: Non-refundable\n\nRefund will be credited instantly to your ANHAR Wallet.`
+
+    if (!window.confirm(confirmMsg)) return
+
+    try {
+      const res = await api.cancelBooking(booking.pnr)
+      if (res && res.success) {
+        alert(`Ticket Cancelled!\n\n• Deduction: ${res.deductionPct}% (₹${res.deductionAmount})\n• Refunded: ₹${res.refundAmount}\n• New Wallet: ₹${res.newBalance}`)
+        if (currentUser) setWalletBalance(res.newBalance)
+        await fetchLatestData()
+      } else {
+        alert(res?.message || 'Failed to cancel booking.')
+      }
+    } catch (err) {
+      alert('Network error while processing cancellation.')
+    }
+  }
+
+  // Operator Manifest Handlers
+  const handleViewManifest = async (busId) => {
+    setSelectedManifestBus(busId)
+    setIsLoadingManifest(true)
+    try {
+      const res = await api.getTripManifest(busId, journeyDate)
+      if (res && res.success) {
+        setManifestList(res.manifest)
+      }
+    } catch (err) {
+      alert('Failed to load passenger manifest.')
+    } finally {
+      setIsLoadingManifest(false)
+    }
+  }
+
+  const handleCreateBusSubmit = async (e) => {
+    e.preventDefault()
+    try {
+      const payload = {
+        ...newBusForm,
+        operatorPhone: currentUser || '8977733885'
+      }
+      const res = await api.createOperatorBus(payload)
+      if (res && res.success) {
+        alert(`Bus ${res.bus.busNumber} added to fleet!`)
+        setShowAddBusModal(false)
+        await fetchLatestData()
+      } else {
+        alert(res?.error || 'Failed to add bus.')
+      }
+    } catch (err) {
+      alert('Network error while creating bus schedule.')
+    }
+  }
+
+  // Resale Seller & Buyer logic
+  const [resellingBooking, setResellingBooking] = useState(null)
+  const [seatsToResell, setSeatsToResell] = useState([])
+  const [resaleMarkup, setResaleMarkup] = useState(0)
+  const [isSubmittingResale, setIsSubmittingResale] = useState(false)
+  const [selectedResaleItem, setSelectedResaleItem] = useState(null)
+  const [buyerDetails, setBuyerDetails] = useState({ name: '', age: '', gender: 'Male', phone: '', email: '' })
 
   const openResaleModal = (booking) => {
     setResellingBooking(booking)
@@ -559,29 +466,12 @@ export default function App() {
     }
   }
 
-  // Prevents multiple rapid clicks from creating duplicate resale items
   const confirmResaleListing = async () => {
     if (seatsToResell.length === 0 || isSubmittingResale) return
-
     setIsSubmittingResale(true)
-
     try {
       const listingCutoff = Date.now() + 3 * 60 * 60 * 1000
-
-      // Capture the seller phone reliably from booking contact or active session
-      const rawSellerPhone = 
-        resellingBooking.contact?.phone || 
-        currentUser || 
-        localStorage.getItem('anhar_user_phone') || 
-        ''
-
-      const cleanSellerPhone = String(rawSellerPhone).replace(/\D/g, '').slice(-10)
-
-      if (!cleanSellerPhone || cleanSellerPhone.length !== 10) {
-        alert('Valid 10-digit mobile number required to receive your resale payout.')
-        setIsSubmittingResale(false)
-        return
-      }
+      const cleanSellerPhone = String(resellingBooking.contact?.phone || currentUser || '').replace(/\D/g, '').slice(-10)
 
       const newListings = seatsToResell.map((seatNum) => ({
         id: `RES-${Date.now()}-${seatNum}`,
@@ -616,16 +506,14 @@ export default function App() {
         return b
       })
 
-      // Persist resale listings and updated booking state to MongoDB
       await api.publishResale(newListings, updatedBookings)
-
       await fetchLatestData()
       setResellingBooking(null)
       setSeatsToResell([])
-      alert(`Listed ${newListings.length} seat(s) for resale! Timer is live.`)
+      alert(`Listed ${newListings.length} seat(s) for resale!`)
       setActiveTab('resale-market')
     } catch (err) {
-      alert('Failed to publish resale listing. Please try again.')
+      alert('Failed to publish resale listing.')
     } finally {
       setIsSubmittingResale(false)
     }
@@ -644,10 +532,9 @@ export default function App() {
 
   const handleResalePurchaseSubmit = async (e) => {
     e.preventDefault()
-
     const cleanBuyerPhone = String(buyerDetails.phone).replace(/\D/g, '').slice(-10)
-
     const newBuyerPnr = 'RES-ANH' + Math.floor(100000 + Math.random() * 900000)
+
     const newBuyerBooking = {
       pnr: newBuyerPnr,
       busId: selectedResaleItem.busId,
@@ -666,10 +553,7 @@ export default function App() {
         age: Number(buyerDetails.age),
         gender: buyerDetails.gender
       }],
-      contact: {
-        phone: cleanBuyerPhone,
-        email: buyerDetails.email
-      },
+      contact: { phone: cleanBuyerPhone, email: buyerDetails.email },
       sellerPnr: selectedResaleItem.sellerPnr,
       sellerPhone: selectedResaleItem.sellerPhone,
       baseFare: selectedResaleItem.resalePrice,
@@ -678,55 +562,75 @@ export default function App() {
       status: 'VERIFIED_RESALE_TICKET'
     }
 
-    // Process resale purchase: Backend automatically credits seller's User document in MongoDB Atlas
     const res = await api.buyResale(selectedResaleItem.id, newBuyerBooking)
-
     if (res.success) {
-      // Set active session to buyer
       if (cleanBuyerPhone) {
         localStorage.setItem('anhar_user_phone', cleanBuyerPhone)
         setCurrentUser(cleanBuyerPhone)
-        try {
-          const buyerWallet = await api.getWallet(cleanBuyerPhone)
-          if (buyerWallet && buyerWallet.success) {
-            setWalletBalance(buyerWallet.balance)
-          }
-        } catch (err) {
-          console.error('Failed to sync buyer wallet:', err)
-        }
       }
-
       await fetchLatestData()
       setSelectedResaleItem(null)
-      alert(`Success! Ticket confirmed with PNR: ${newBuyerPnr}. ₹${selectedResaleItem.resalePrice} has been credited to seller's MongoDB wallet.`)
+      alert(`Ticket confirmed: PNR ${newBuyerPnr}`)
       setActiveTab('my-bookings')
     } else {
-      alert(res.message || 'Failed to complete resale ticket transaction.')
+      alert(res.message || 'Failed to complete purchase.')
     }
   }
 
-  // redBus-Style Ticket Cancellation & Instant Wallet Refund Engine
-  const handleCancelBooking = async (booking) => {
-    const confirmMsg = `Are you sure you want to cancel Ticket PNR: ${booking.pnr}?\n\nCancellation Policy:\n• >24 hrs: 10% charge (90% refund)\n• 12-24 hrs: 25% charge (75% refund)\n• 2-12 hrs: 50% charge (50% refund)\n• <2 hrs: Non-refundable\n\nRefund will be credited instantly to your ANHAR Wallet.`
-
-    if (!window.confirm(confirmMsg)) return
-
+  const handleRequestOtp = async (e) => {
+    e.preventDefault()
+    const cleanPhone = loginForm.phone.trim().replace(/\D/g, '').slice(-10)
+    if (cleanPhone.length !== 10) return alert('Enter valid 10-digit number.')
+    setIsSendingOtp(true)
     try {
-      const res = await api.cancelBooking(booking.pnr)
+      const res = await api.sendOtp(cleanPhone)
       if (res && res.success) {
-        alert(`Ticket Cancelled Successfully!\n\n• Deduction: ${res.deductionPct}% (₹${res.deductionAmount})\n• Refunded: ₹${res.refundAmount}\n• New Wallet Balance: ₹${res.newBalance}`)
-        
-        // Update wallet state and fetch latest bookings from MongoDB Atlas
-        if (currentUser) {
-          setWalletBalance(res.newBalance)
-        }
-        await fetchLatestData()
+        setLoginStep('OTP')
+        alert(res.devOtp ? `Dev OTP: ${res.devOtp}` : `OTP sent to +91 ${cleanPhone}`)
       } else {
-        alert(res?.message || 'Failed to cancel booking.')
+        alert(res?.message || 'Failed to send OTP.')
       }
-    } catch (err) {
-      alert('Network error while processing cancellation.')
+    } finally {
+      setIsSendingOtp(false)
     }
+  }
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault()
+    const cleanPhone = loginForm.phone.trim().replace(/\D/g, '').slice(-10)
+    setIsVerifyingOtp(true)
+    try {
+      const res = await api.verifyOtp({
+        phone: cleanPhone,
+        name: loginForm.name.trim(),
+        email: loginForm.email.trim(),
+        otp: otpInput.trim()
+      })
+      if (res && res.success) {
+        localStorage.setItem('anhar_user_phone', cleanPhone)
+        localStorage.setItem('anhar_user_name', loginForm.name.trim())
+        localStorage.setItem('anhar_user_email', loginForm.email.trim())
+        setCurrentUser(cleanPhone)
+        setCurrentUserName(loginForm.name.trim())
+        setCurrentUserEmail(loginForm.email.trim())
+        setShowLoginModal(false)
+        setLoginStep('DETAILS')
+      } else {
+        alert(res?.message || 'Invalid OTP.')
+      }
+    } finally {
+      setIsVerifyingOtp(false)
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('anhar_user_phone')
+    localStorage.removeItem('anhar_user_name')
+    localStorage.removeItem('anhar_user_email')
+    setCurrentUser('')
+    setCurrentUserName('')
+    setCurrentUserEmail('')
+    setWalletBalance(0)
   }
 
   const swapCities = () => {
@@ -735,36 +639,18 @@ export default function App() {
     setDestination(temp)
   }
 
-  const handlePrintTicket = () => {
-    window.print()
-  }
-
   const addFundsToWallet = async () => {
-    if (!currentUser) {
-      setShowLoginModal(true)
-      return
-    }
+    if (!currentUser) return setShowLoginModal(true)
     const amount = Number(prompt('Enter amount to add to ANHAR Wallet (₹):', '500'))
     if (amount > 0) {
-      try {
-        const res = await api.updateWallet(currentUser, amount)
-        if (res && res.success) {
-          setWalletBalance(res.balance)
-          alert(`₹${amount} added successfully! New Wallet Balance: ₹${res.balance}`)
-        }
-      } catch (err) {
-        alert('Failed to update wallet in database.')
-      }
+      const res = await api.updateWallet(currentUser, amount)
+      if (res && res.success) setWalletBalance(res.balance)
     }
   }
 
-  const walletDeductionPossible = pendingBookingData 
-    ? Math.min(walletBalance, pendingBookingData.grandTotal) 
-    : 0
+  const walletDeductionPossible = pendingBookingData ? Math.min(walletBalance, pendingBookingData.grandTotal) : 0
   const finalPayableAfterWallet = pendingBookingData 
-    ? useWalletOffset 
-      ? Math.max(0, pendingBookingData.grandTotal - walletDeductionPossible) 
-      : pendingBookingData.grandTotal
+    ? useWalletOffset ? Math.max(0, pendingBookingData.grandTotal - walletDeductionPossible) : pendingBookingData.grandTotal 
     : 0
 
   return (
@@ -785,15 +671,15 @@ export default function App() {
             </button>
             <button 
               className={`nav-btn ${activeTab === 'my-bookings' ? 'active' : ''}`} 
-              onClick={() => {
-                if (!currentUser) {
-                  setShowLoginModal(true)
-                } else {
-                  setActiveTab('my-bookings')
-                }
-              }}
+              onClick={() => currentUser ? setActiveTab('my-bookings') : setShowLoginModal(true)}
             >
               My Bookings ({userPersonalBookings.length})
+            </button>
+            <button 
+              className={`nav-btn ${activeTab === 'operator' ? 'active' : ''}`} 
+              onClick={() => setActiveTab('operator')}
+            >
+              🚍 Operator Desk
             </button>
             <div className="wallet-chip" onClick={addFundsToWallet} title="Click to Top-Up Wallet">
               💰 Wallet: <strong>₹{walletBalance}</strong> <span className="wallet-plus">+</span>
@@ -804,9 +690,7 @@ export default function App() {
                 <button className="logout-mini-btn" onClick={handleLogout} title="Logout">✕</button>
               </div>
             ) : (
-              <button className="login-nav-btn" onClick={() => setShowLoginModal(true)}>
-                Login
-              </button>
+              <button className="login-nav-btn" onClick={() => setShowLoginModal(true)}>Login</button>
             )}
           </nav>
         </div>
@@ -830,9 +714,7 @@ export default function App() {
                 </div>
 
                 <div className="swap-btn-container">
-                  <button type="button" className="swap-city-btn" title="Swap Cities" onClick={swapCities}>
-                    ⇄
-                  </button>
+                  <button type="button" className="swap-city-btn" title="Swap Cities" onClick={swapCities}>⇄</button>
                 </div>
 
                 <div className="input-group">
@@ -849,7 +731,7 @@ export default function App() {
                   <label>Date</label>
                   <input type="date" value={journeyDate} onChange={(e) => setJourneyDate(e.target.value)} />
                 </div>
-                <button className="search-btn">Search Buses</button>
+                <button className="search-btn" onClick={fetchLatestData}>Search Buses</button>
               </div>
             </div>
           </section>
@@ -858,10 +740,9 @@ export default function App() {
             <div className="results-header-row">
               <div>
                 <h3>Available Buses: {source} → {destination}</h3>
-                <p className="route-sub-count">Showing {filteredAndSortedBuses.length} of {buses.length} buses</p>
+                <p className="route-sub-count">Showing {filteredAndSortedBuses.length} active fleet services</p>
               </div>
 
-              {/* Quick Sort Dropdown */}
               <div className="sort-control-box">
                 <label>Sort By:</label>
                 <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
@@ -873,166 +754,72 @@ export default function App() {
               </div>
             </div>
 
-            {/* Filter Bar */}
-            <div className="filters-strip">
-              <div className="filter-group">
-                <span className="filter-title">Bus Type:</span>
-                <div className="filter-pills">
-                  <button 
-                    className={`pill-btn ${selectedTypeFilter === 'ALL' ? 'active' : ''}`}
-                    onClick={() => setSelectedTypeFilter('ALL')}
-                  >
-                    All Types
-                  </button>
-                  <button 
-                    className={`pill-btn ${selectedTypeFilter === 'AC Sleeper' ? 'active' : ''}`}
-                    onClick={() => setSelectedTypeFilter('AC Sleeper')}
-                  >
-                    🛏️ AC Sleeper
-                  </button>
-                  <button 
-                    className={`pill-btn ${selectedTypeFilter === 'Volvo' ? 'active' : ''}`}
-                    onClick={() => setSelectedTypeFilter('Volvo')}
-                  >
-                    🚌 Volvo Multi-Axle
-                  </button>
-                  <button 
-                    className={`pill-btn ${selectedTypeFilter === 'Non-AC' ? 'active' : ''}`}
-                    onClick={() => setSelectedTypeFilter('Non-AC')}
-                  >
-                    💺 Non-AC Seater
-                  </button>
-                </div>
-              </div>
-
-              <div className="filter-group">
-                <span className="filter-title">Departure Time:</span>
-                <div className="filter-pills">
-                  <button 
-                    className={`pill-btn ${selectedTimeSlot === 'ALL' ? 'active' : ''}`}
-                    onClick={() => setSelectedTimeSlot('ALL')}
-                  >
-                    Any Time
-                  </button>
-                  <button 
-                    className={`pill-btn ${selectedTimeSlot === 'MORNING' ? 'active' : ''}`}
-                    onClick={() => setSelectedTimeSlot('MORNING')}
-                  >
-                    🌅 Morning (06:00 - 12:00)
-                  </button>
-                  <button 
-                    className={`pill-btn ${selectedTimeSlot === 'EVENING' ? 'active' : ''}`}
-                    onClick={() => setSelectedTimeSlot('EVENING')}
-                  >
-                    🌇 Evening (18:00 - 23:00)
-                  </button>
-                  <button 
-                    className={`pill-btn ${selectedTimeSlot === 'NIGHT' ? 'active' : ''}`}
-                    onClick={() => setSelectedTimeSlot('NIGHT')}
-                  >
-                    🌙 Night (After 23:00)
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Bus Cards List */}
             <div className="bus-list">
-              {filteredAndSortedBuses.length === 0 ? (
-                <div className="no-buses-found">
-                  <p>No buses match your selected filter criteria.</p>
-                  <button 
-                    className="reset-filters-btn"
-                    onClick={() => {
-                      setSelectedTypeFilter('ALL')
-                      setSelectedTimeSlot('ALL')
-                    }}
-                  >
-                    Reset Filters
-                  </button>
-                </div>
-              ) : (
-                filteredAndSortedBuses.map((bus) => (
-                  <div key={bus.id} className="bus-card">
+              {filteredAndSortedBuses.map((bus) => {
+                const busKey = bus._id || bus.id
+                return (
+                  <div key={busKey} className="bus-card">
                     <div className="bus-main-info">
                       <div>
                         <h4>{bus.name}</h4>
-                        <span className="bus-badge">{bus.type}</span>
+                        <span className="bus-badge">{bus.type || bus.category}</span>
                       </div>
-                      <div className="rating-tag">{bus.rating} ★</div>
+                      <div className="rating-tag">{bus.rating || 4.7} ★</div>
                     </div>
 
                     <div className="bus-timings">
                       <div>
                         <strong>{bus.departure}</strong>
-                        <p>{source}</p>
+                        <p>{bus.source || source}</p>
                       </div>
                       <div className="duration">
-                        <span>{bus.duration}</span>
+                        <span>{bus.duration || '8h 30m'}</span>
                         <div className="route-line"></div>
                       </div>
                       <div>
                         <strong>{bus.arrival}</strong>
-                        <p>{destination}</p>
+                        <p>{bus.destination || destination}</p>
                       </div>
                       <div className="bus-price">
-                        <span className="fare-label">Base Fare</span>
+                        <span className="fare-label">Fare</span>
                         <h3>₹{bus.price}</h3>
                       </div>
                     </div>
 
                     <div className="bus-actions">
-                      <span className="seats-count">{bus.availableSeats} regular seats remaining</span>
-                      <button 
-                        className="select-seat-btn"
-                        onClick={() => openBusDetails(bus)}
-                      >
-                        {selectedBus?.id === bus.id ? 'Close Seat Map' : 'Select Seats'}
+                      <span className="seats-count">{bus.totalSeats || 24} total berths</span>
+                      <button className="select-seat-btn" onClick={() => openBusDetails(bus)}>
+                        {selectedBus && (selectedBus._id || selectedBus.id) === busKey ? 'Close Seat Map' : 'Select Seats'}
                       </button>
                     </div>
 
-                    {/* SEAT MAP */}
-                    {selectedBus?.id === bus.id && (
+                    {selectedBus && (selectedBus._id || selectedBus.id) === busKey && (
                       <div className="seat-layout-panel">
                         <div className="seat-map-header">
-                          <h5>Seat Selection Layout</h5>
-                          <div className="seat-legend">
-                            <div className="legend-item"><span className="legend-sample available-sample"></span> Available</div>
-                            <div className="legend-item"><span className="legend-sample selected-sample"></span> Selected</div>
-                            <div className="legend-item"><span className="legend-sample booked-sample"></span> Booked</div>
-                            <div className="legend-item"><span className="legend-sample resale-sample"></span> Resale Available</div>
-                          </div>
+                          <h5>Select Your Seat ({bus.name})</h5>
                         </div>
-
                         <div className="bus-interior-box">
                           <div className="steering-wheel">🚍 Driver Deck</div>
                           <div className="seat-grid">
                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => {
                               const isSelected = selectedSeats.includes(num)
                               const resaleItem = resaleListings.find(
-                                r => Number(r.busId) === Number(bus.id) && Number(r.seatNumber) === Number(num) && r.status === 'AVAILABLE'
+                                r => String(r.busId) === String(busKey) && Number(r.seatNumber) === Number(num) && r.status === 'AVAILABLE'
                               )
-                              const isBooked = !resaleItem && isSeatBooked(num, bus.id)
-                              const isResale = !resaleItem ? false : true
+                              const isBooked = !resaleItem && isSeatBooked(num, busKey)
+                              const isResale = !!resaleItem
 
                               let seatClass = 'seat-box'
                               let label = num
-
-                              if (isSelected) {
-                                seatClass += ' seat-selected'
-                              } else if (isResale) {
-                                seatClass += ' seat-resale'
-                                label = `${num} ⚡`
-                              } else if (isBooked) {
-                                seatClass += ' seat-booked'
-                              }
+                              if (isSelected) seatClass += ' seat-selected'
+                              else if (isResale) { seatClass += ' seat-resale'; label = `${num} ⚡` }
+                              else if (isBooked) seatClass += ' seat-booked'
 
                               return (
                                 <button
                                   key={num}
                                   disabled={isBooked}
                                   className={seatClass}
-                                  title={isResale ? 'Click to Buy Resale Seat!' : isBooked ? 'Seat Booked' : `Seat ${num}`}
                                   onClick={() => handleSeatClick(num, bus)}
                                 >
                                   {label}
@@ -1042,61 +829,12 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="points-selection-grid">
-                          <div className="points-box">
-                            <label className="points-label">📍 Boarding Points in {source}</label>
-                            <div className="points-options">
-                              {(CITY_POINTS[source] || []).map((bp) => {
-                                const isSelected = selectedBoardingPoint === bp.name
-                                return (
-                                  <div 
-                                    key={bp.id} 
-                                    className={`point-option-card ${isSelected ? 'point-selected' : ''}`}
-                                    onClick={() => setSelectedBoardingPoint(bp.name)}
-                                  >
-                                    <input type="radio" checked={isSelected} readOnly />
-                                    <div>
-                                      <strong>{bp.name}</strong>
-                                      <span className="point-time">Timing Offset: {bp.timeOffset}</span>
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-
-                          <div className="points-box">
-                            <label className="points-label">🎯 Dropping Points in {destination}</label>
-                            <div className="points-options">
-                              {(CITY_POINTS[destination] || []).map((dp) => {
-                                const isSelected = selectedDroppingPoint === dp.name
-                                return (
-                                  <div 
-                                    key={dp.id} 
-                                    className={`point-option-card ${isSelected ? 'point-selected' : ''}`}
-                                    onClick={() => setSelectedDroppingPoint(dp.name)}
-                                  >
-                                    <input type="radio" checked={isSelected} readOnly />
-                                    <div>
-                                      <strong>{dp.name}</strong>
-                                      <span className="point-time">Arrival Offset: {dp.timeOffset}</span>
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        </div>
-
                         <div className="seat-summary">
                           <div>
                             <p>Selected Seats ({selectedSeats.length}): <strong>{selectedSeats.join(', ') || 'None'}</strong></p>
-                            <p className="chosen-points-preview">
-                              <strong>Pickup:</strong> {selectedBoardingPoint} | <strong>Drop:</strong> {selectedDroppingPoint}
-                            </p>
                           </div>
                           <div className="action-col">
-                            <span className="summary-fare">Base Fare: <strong>₹{selectedSeats.length * bus.price}</strong></span>
+                            <span className="summary-fare">Fare: <strong>₹{selectedSeats.length * bus.price}</strong></span>
                             <button 
                               className="proceed-btn" 
                               disabled={selectedSeats.length === 0}
@@ -1109,101 +847,58 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                ))
-              )}
+                )
+              })}
             </div>
           </main>
         </>
       )}
 
-      {/* TAB 2: MY BOOKINGS (PRIVATE TO LOGGED-IN PASSENGER) */}
+      {/* TAB 2: MY BOOKINGS */}
       {activeTab === 'my-bookings' && (
         <main className="results-container no-print">
           <div className="section-title-row">
             <h2>My Bookings</h2>
-            <p>View tickets, print conductor boarding passes, list seats for resale, or cancel tickets</p>
+            <p>View tickets, print conductor boarding passes, list seats for resale, or cancel</p>
           </div>
 
-          {!currentUser ? (
-            <div className="empty-state">
-              <p>Please log in with your mobile number to view and manage your tickets.</p>
-              <button className="search-btn" onClick={() => setShowLoginModal(true)}>
-                Login with Mobile Number
-              </button>
-            </div>
-          ) : userPersonalBookings.length === 0 ? (
-            <div className="empty-state">
-              <p>No active bookings found for +91 {currentUser}.</p>
-              <button className="search-btn" onClick={() => setActiveTab('book')}>
-                Book a Bus Ticket
-              </button>
-            </div>
-          ) : (
-            <div className="bus-list">
-              {userPersonalBookings.map((b) => (
-                <div key={b.pnr} className="booking-card">
-                  <div className="booking-top">
-                    <div>
-                      <span className="pnr-tag">PNR: {b.pnr}</span>
-                      <h4>{b.busName}</h4>
-                      <p className="route-sub">{b.route} • {b.journeyDate} at {b.departure}</p>
-                      <p className="points-sub">📍 <strong>Boarding:</strong> {b.boarding} | 🎯 <strong>Drop:</strong> {b.dropping}</p>
-                    </div>
-                    <div className={`booking-status-badge ${b.status === 'CANCELLED' ? 'status-cancelled' : ''}`}>
-                      {b.status}
-                    </div>
+          <div className="bus-list">
+            {userPersonalBookings.map((b) => (
+              <div key={b.pnr} className="booking-card">
+                <div className="booking-top">
+                  <div>
+                    <span className="pnr-tag">PNR: {b.pnr}</span>
+                    <h4>{b.busName}</h4>
+                    <p className="route-sub">{b.route} • {b.journeyDate} at {b.departure}</p>
                   </div>
-
-                  <div className="passenger-seat-list">
-                    <h5>Confirmed Passengers & Seats:</h5>
-                    <div className="passengers-chips">
-                      {(b.passengers || []).map(p => (
-                        <div key={p.seatNumber} className="seat-pill">
-                          <strong>Seat {p.seatNumber}</strong>: {p.name} ({p.gender}, {p.age} yrs)
-                        </div>
-                      ))}
-                    </div>
-                    {b.contact?.phone && (
-                      <p className="contact-sub">Contact: +91 {b.contact.phone} | {b.contact.email}</p>
-                    )}
-                  </div>
-
-                  <div className="booking-footer">
-                    <span className="total-label">Total Paid: <strong>₹{b.totalPaid}</strong> <small>({b.paymentMethod || 'UPI'})</small></span>
-                    <div className="booking-btn-row">
-                      <button className="view-ticket-btn" onClick={() => setViewTicket(b)}>
-                        🖨️ View & Print Ticket
-                      </button>
-                      {b.status === 'CONFIRMED' && (
-                        <>
-                          {b.passengers && b.passengers.length > 0 && (
-                            <button className="resale-trigger-btn" onClick={() => openResaleModal(b)}>
-                              🔄 Resale Seats ({b.passengers.length})
-                            </button>
-                          )}
-                          <button 
-                            className="cancel-ticket-btn" 
-                            style={{
-                              background: '#fee2e2',
-                              color: '#dc2626',
-                              border: '1px solid #f87171',
-                              padding: '0.45rem 0.8rem',
-                              borderRadius: '6px',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
-                            onClick={() => handleCancelBooking(b)}
-                          >
-                            ✕ Cancel Ticket
-                          </button>
-                        </>
-                      )}
-                    </div>
+                  <div className={`booking-status-badge ${b.status === 'CANCELLED' ? 'status-cancelled' : ''}`}>
+                    {b.status}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+
+                <div className="booking-footer">
+                  <span className="total-label">Total Paid: <strong>₹{b.totalPaid}</strong></span>
+                  <div className="booking-btn-row">
+                    <button className="view-ticket-btn" onClick={() => setViewTicket(b)}>🖨️ View Ticket</button>
+                    {b.status === 'CONFIRMED' && (
+                      <>
+                        <button className="resale-trigger-btn" onClick={() => openResaleModal(b)}>
+                          🔄 Resale Seats ({b.passengers.length})
+                        </button>
+                        <button 
+                          className="cancel-ticket-btn" 
+                          style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #f87171', padding: '0.45rem 0.8rem', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}
+                          onClick={() => handleCancelBooking(b)}
+                        >
+                          ✕ Cancel Ticket
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </main>
       )}
 
@@ -1211,271 +906,218 @@ export default function App() {
       {activeTab === 'resale-market' && (
         <main className="results-container no-print">
           <div className="section-title-row">
-            <h2>⚡ ANHAR Quick-Sale Board</h2>
-            <p>Direct passenger re-sales. All tickets auto-lock 1 hour before bus departure.</p>
+            <h2>⚡ Quick-Sale Board</h2>
+            <p>Direct passenger re-sales.</p>
           </div>
 
           <div className="bus-list">
-            {resaleListings.length === 0 ? (
-              <p>No seats currently listed for resale.</p>
-            ) : (
-              resaleListings.map(item => {
-                const countdown = getCutoffCountdown(item.cutoffTimestamp)
-                return (
-                  <div key={item.id} className={`bus-card resale-card ${countdown.isExpired ? 'resale-card-expired' : ''}`}>
-                    <div className="bus-main-info">
-                      <div>
-                        <div className="resale-badge-row">
-                          <span className="verified-resale-badge">✔ Verified Passenger Resale</span>
-                          {countdown.isExpired ? (
-                            <span className="timer-badge expired-timer">🔒 Cutoff Reached (Resale Closed)</span>
-                          ) : (
-                            <span className="timer-badge active-timer">
-                              ⏱️ Closes in: <strong>{countdown.text}</strong>
-                            </span>
-                          )}
-                        </div>
-                        <h4>{item.busName}</h4>
-                        <p>{item.route} • {item.date} at {item.time}</p>
-                        <p className="points-sub">📍 {item.boarding} ➔ 🎯 {item.dropping}</p>
-                        <span className="seller-sub">Original Passenger: {item.sellerName}</span>
-                      </div>
-                      <div className="resale-pricing-box">
-                        <span className="orig-price">Base: ₹{item.originalPrice}</span>
-                        <h3 className="resale-price">₹{item.resalePrice}</h3>
-                        <span className="seat-callout">Seat No: <strong>{item.seatNumber}</strong></span>
-                      </div>
-                    </div>
-
-                    <div className="resale-actions">
-                      <span className="cutoff-note">
-                        {countdown.isExpired 
-                          ? '❌ Window closed 1 hr before departure' 
-                          : '⏰ Seat expires from board 1 hr before departure'}
-                      </span>
-                      <button 
-                        disabled={countdown.isExpired}
-                        className={`buy-resale-btn ${countdown.isExpired ? 'btn-disabled' : ''}`}
-                        onClick={() => openBuyerModal(item)}
-                      >
-                        {countdown.isExpired ? 'Sale Closed' : `Buy Seat ${item.seatNumber} & Enter Details`}
-                      </button>
-                    </div>
+            {resaleListings.map(item => (
+              <div key={item.id} className="bus-card resale-card">
+                <div className="bus-main-info">
+                  <div>
+                    <h4>{item.busName} (Seat {item.seatNumber})</h4>
+                    <p>{item.route} • {item.date} at {item.time}</p>
                   </div>
-                )
-              })
-            )}
+                  <h3>₹{item.resalePrice}</h3>
+                </div>
+                <button className="buy-resale-btn" onClick={() => openBuyerModal(item)}>
+                  Buy Seat {item.seatNumber}
+                </button>
+              </div>
+            ))}
           </div>
         </main>
       )}
 
-      {/* MODAL 0: BRANDED PRINTABLE BOARDING PASS */}
-      {viewTicket && (
-        <div className="modal-backdrop printable-modal-backdrop">
-          <div className="printable-ticket-wrapper">
-            <div className="ticket-actions-bar no-print">
-              <button className="print-action-btn" onClick={handlePrintTicket}>
-                🖨️ Print / Save as PDF
-              </button>
-              <button className="close-ticket-btn" onClick={() => setViewTicket(null)}>✕ Close</button>
+      {/* TAB 4: OPERATOR DESK & PASSENGER MANIFEST */}
+      {activeTab === 'operator' && (
+        <main className="results-container no-print">
+          <div className="section-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h2>Bus Operator Desk & Manifest</h2>
+              <p>Live passenger charts, boarding verification, and fleet management</p>
             </div>
-
-            <div className="boarding-pass">
-              <div className="ticket-top-header">
-                <div className="ticket-brand-left">
-                  <h2>🚌 ANHAR BUS</h2>
-                  <p>E-Ticket / Conductor Boarding Pass</p>
-                </div>
-                <div className="ticket-qr-section">
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=ANHAR_PASS_PNR_${viewTicket.pnr}`} 
-                    alt="Ticket QR" 
-                    className="qr-image"
-                  />
-                  <span>Scan to Verify</span>
-                </div>
-              </div>
-
-              <div className="pnr-strip">
-                <div>
-                  <span className="strip-label">PNR NUMBER</span>
-                  <strong>{viewTicket.pnr}</strong>
-                </div>
-                <div>
-                  <span className="strip-label">STATUS</span>
-                  <span className="strip-status">{viewTicket.status}</span>
-                </div>
-                <div>
-                  <span className="strip-label">BUS NUMBER</span>
-                  <strong>{viewTicket.busNumber || 'AP 04 TX 9924'}</strong>
-                </div>
-                <div>
-                  <span className="strip-label">TOTAL PAID</span>
-                  <strong>₹{viewTicket.totalPaid} ({viewTicket.paymentMethod || 'UPI'})</strong>
-                </div>
-              </div>
-
-              <div className="ticket-route-grid">
-                <div className="route-block">
-                  <span className="block-label">DEPARTURE</span>
-                  <h3>{viewTicket.departure}</h3>
-                  <p className="block-date">{viewTicket.journeyDate}</p>
-                  <div className="landmark-box">
-                    <strong>📍 Boarding Landmark:</strong>
-                    <p>{viewTicket.boarding}</p>
-                    <small>⏰ Please report 15 mins prior to departure</small>
-                  </div>
-                </div>
-
-                <div className="route-block arrow-block">
-                  <span className="route-arrow">➔</span>
-                  <span className="route-name">{viewTicket.route}</span>
-                  <span className="service-name">{viewTicket.busName}</span>
-                </div>
-
-                <div className="route-block">
-                  <span className="block-label">ARRIVAL</span>
-                  <h3>{viewTicket.arrival || '06:00'}</h3>
-                  <p className="block-date">{viewTicket.journeyDate}</p>
-                  <div className="landmark-box">
-                    <strong>🎯 Dropping Point:</strong>
-                    <p>{viewTicket.dropping}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="ticket-passengers-section">
-                <h4>Confirmed Passengers ({(viewTicket.passengers || []).length})</h4>
-                <table className="ticket-passenger-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Passenger Name</th>
-                      <th>Age / Gender</th>
-                      <th>Seat No.</th>
-                      <th>Seat Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(viewTicket.passengers || []).map((p, idx) => (
-                      <tr key={p.seatNumber}>
-                        <td>{idx + 1}</td>
-                        <td><strong>{p.name}</strong></td>
-                        <td>{p.age} yrs / {p.gender}</td>
-                        <td><span className="seat-badge-print">Seat {p.seatNumber}</span></td>
-                        <td><span className="status-confirmed">Confirmed</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="ticket-footer-notes">
-                <div className="notes-left">
-                  <p><strong>Primary Contact:</strong> +91 {viewTicket.contact?.phone || '9347685668'} | {viewTicket.contact?.email || 'N/A'}</p>
-                  <p>Government photo ID is required for primary passenger during boarding.</p>
-                  <p>Resale eligible up to 1 hour prior to scheduled bus departure via ANHAR App.</p>
-                </div>
-                <div className="support-right">
-                  <strong>24x7 ANHAR Helpline</strong>
-                  <p>📞 1800-425-ANHAR (Toll Free)</p>
-                  <p>support@anharbus.com</p>
-                </div>
-              </div>
-            </div>
+            <button 
+              className="confirm-btn" 
+              style={{ width: 'auto', padding: '0.6rem 1.2rem' }}
+              onClick={() => setShowAddBusModal(true)}
+            >
+              + Add New Bus Trip
+            </button>
           </div>
-        </div>
+
+          <div className="bus-list">
+            {activeFleet.map(bus => {
+              const busKey = bus._id || bus.id
+              return (
+                <div key={busKey} className="booking-card">
+                  <div className="booking-top">
+                    <div>
+                      <span className="pnr-tag">{bus.busNumber || 'AP 04 TX 9924'}</span>
+                      <h4>{bus.name}</h4>
+                      <p className="route-sub">{bus.source || source} → {bus.destination || destination} • Dept: {bus.departure} • Base: ₹{bus.price}</p>
+                      <span className="bus-badge">{bus.category}</span>
+                    </div>
+                    <button 
+                      className="select-seat-btn"
+                      onClick={() => handleViewManifest(busKey)}
+                    >
+                      📋 Passenger Chart ({journeyDate})
+                    </button>
+                  </div>
+
+                  {selectedManifestBus === busKey && (
+                    <div style={{ marginTop: '1.2rem', background: '#f8fafc', padding: '1rem', borderRadius: '8px' }}>
+                      <h5>Confirmed Passenger Manifest ({manifestList.length} Booked Seats)</h5>
+                      {isLoadingManifest ? (
+                        <p>Loading trip sheet...</p>
+                      ) : manifestList.length === 0 ? (
+                        <p style={{ color: '#64748b' }}>No passengers booked on this bus for {journeyDate}.</p>
+                      ) : (
+                        <table className="ticket-passenger-table" style={{ marginTop: '0.8rem' }}>
+                          <thead>
+                            <tr>
+                              <th>Seat</th>
+                              <th>Passenger Name</th>
+                              <th>Phone</th>
+                              <th>Boarding Point</th>
+                              <th>PNR</th>
+                              <th>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {manifestList.map((m, idx) => (
+                              <tr key={idx}>
+                                <td><strong>Seat {m.seatNumber}</strong></td>
+                                <td>{m.name} ({m.gender}, {m.age}y)</td>
+                                <td>+91 {m.phone}</td>
+                                <td>{m.boarding}</td>
+                                <td><span className="pnr-tag">{m.pnr}</span></td>
+                                <td><span className="status-confirmed">{m.status}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </main>
       )}
 
-      {/* MODAL 1: BUYER DETAILS CHECKOUT */}
-      {selectedResaleItem && (
+      {/* MODAL: ADD OPERATOR BUS */}
+      {showAddBusModal && (
         <div className="modal-backdrop no-print">
           <div className="modal-box">
-            <form onSubmit={handleResalePurchaseSubmit}>
+            <form onSubmit={handleCreateBusSubmit}>
               <div className="modal-header">
-                <h3>Buy Resale Ticket (Seat {selectedResaleItem.seatNumber})</h3>
-                <button type="button" className="close-btn" onClick={() => setSelectedResaleItem(null)}>✕</button>
+                <h3>Add Bus to ANHAR Fleet</h3>
+                <button type="button" className="close-btn" onClick={() => setShowAddBusModal(false)}>✕</button>
               </div>
-
-              <div className="booking-summary-banner">
-                <p><strong>Bus:</strong> {selectedResaleItem.busName}</p>
-                <p><strong>Route:</strong> {selectedResaleItem.route}</p>
-                <p><strong>Boarding:</strong> {selectedResaleItem.boarding}</p>
-                <p><strong>Dropping:</strong> {selectedResaleItem.dropping}</p>
-                <p><strong>Seat:</strong> {selectedResaleItem.seatNumber} | <strong>Amount to Pay:</strong> ₹{selectedResaleItem.resalePrice}</p>
-              </div>
-
-              <p className="notice-box">
-                ℹ️ The original ticket will be canceled, and a <strong>brand new PNR will be issued in your name</strong>.
-              </p>
 
               <div className="form-group">
-                <label>Passenger Full Name</label>
+                <label>Bus Service Name</label>
                 <input 
                   type="text" 
                   required 
-                  placeholder="Enter traveler's name"
-                  value={buyerDetails.name}
-                  onChange={(e) => setBuyerDetails({ ...buyerDetails, name: e.target.value })}
+                  placeholder="e.g. ANHAR Royal Travels"
+                  value={newBusForm.name}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, name: e.target.value })}
                 />
               </div>
 
               <div className="form-row">
                 <div className="form-group flex-1">
-                  <label>Age</label>
+                  <label>Registration Number</label>
                   <input 
-                    type="number" 
+                    type="text" 
                     required 
-                    min="1" 
-                    max="120" 
-                    placeholder="Age"
-                    value={buyerDetails.age}
-                    onChange={(e) => setBuyerDetails({ ...buyerDetails, age: e.target.value })}
+                    placeholder="e.g. AP 04 TX 9924"
+                    value={newBusForm.busNumber}
+                    onChange={(e) => setNewBusForm({ ...newBusForm, busNumber: e.target.value })}
                   />
                 </div>
                 <div className="form-group flex-1">
-                  <label>Gender</label>
+                  <label>Category</label>
                   <select 
-                    value={buyerDetails.gender}
-                    onChange={(e) => setBuyerDetails({ ...buyerDetails, gender: e.target.value })}
+                    value={newBusForm.category}
+                    onChange={(e) => setNewBusForm({ ...newBusForm, category: e.target.value })}
                   >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
+                    <option value="AC Sleeper">AC Sleeper</option>
+                    <option value="Volvo">Volvo Multi-Axle</option>
+                    <option value="Non-AC">Non-AC Seater</option>
                   </select>
                 </div>
               </div>
 
-              <div className="form-group">
-                <label>Mobile Number (For Ticket SMS)</label>
-                <input 
-                  type="tel" 
-                  required 
-                  pattern="[0-9]{10}"
-                  placeholder="10-digit mobile number"
-                  value={buyerDetails.phone}
-                  onChange={(e) => setBuyerDetails({ ...buyerDetails, phone: e.target.value })}
-                />
+              <div className="form-row">
+                <div className="form-group flex-1">
+                  <label>From (Source)</label>
+                  <select 
+                    value={newBusForm.source}
+                    onChange={(e) => setNewBusForm({ ...newBusForm, source: e.target.value })}
+                  >
+                    <option value="Bengaluru">Bengaluru</option>
+                    <option value="Hyderabad">Hyderabad</option>
+                    <option value="Guntakal">Guntakal</option>
+                    <option value="Chennai">Chennai</option>
+                  </select>
+                </div>
+                <div className="form-group flex-1">
+                  <label>To (Destination)</label>
+                  <select 
+                    value={newBusForm.destination}
+                    onChange={(e) => setNewBusForm({ ...newBusForm, destination: e.target.value })}
+                  >
+                    <option value="Hyderabad">Hyderabad</option>
+                    <option value="Bengaluru">Bengaluru</option>
+                    <option value="Guntakal">Guntakal</option>
+                    <option value="Chennai">Chennai</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="form-group">
-                <label>Email Address (For Ticket PDF)</label>
-                <input 
-                  type="email" 
-                  required 
-                  placeholder="name@example.com"
-                  value={buyerDetails.email}
-                  onChange={(e) => setBuyerDetails({ ...buyerDetails, email: e.target.value })}
-                />
+              <div className="form-row">
+                <div className="form-group flex-1">
+                  <label>Departure Time</label>
+                  <input 
+                    type="time" 
+                    required 
+                    value={newBusForm.departure}
+                    onChange={(e) => {
+                      const [h, m] = e.target.value.split(':').map(Number)
+                      setNewBusForm({ 
+                        ...newBusForm, 
+                        departure: e.target.value,
+                        departureHour: h + m / 60 
+                      })
+                    }}
+                  />
+                </div>
+                <div className="form-group flex-1">
+                  <label>Ticket Price (₹)</label>
+                  <input 
+                    type="number" 
+                    required 
+                    min="100" 
+                    value={newBusForm.price}
+                    onChange={(e) => setNewBusForm({ ...newBusForm, price: Number(e.target.value) })}
+                  />
+                </div>
               </div>
 
-              <button type="submit" className="confirm-btn">Pay ₹{selectedResaleItem.resalePrice} & Issue Ticket</button>
+              <button type="submit" className="confirm-btn" style={{ marginTop: '1rem' }}>
+                Publish Bus to Network ➔
+              </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: PASSENGER DETAILS FORM */}
+      {/* MODAL: PASSENGER DETAILS FORM */}
       {showPassengerModal && (
         <div className="modal-backdrop no-print">
           <div className="modal-box large-modal">
@@ -1483,12 +1125,6 @@ export default function App() {
               <div className="modal-header">
                 <h3>Passenger Details ({passengerDetails.length} Seats)</h3>
                 <button type="button" className="close-btn" onClick={() => setShowPassengerModal(false)}>✕</button>
-              </div>
-
-              <div className="booking-summary-banner">
-                <p><strong>Route:</strong> {source} → {destination}</p>
-                <p><strong>Boarding:</strong> {selectedBoardingPoint}</p>
-                <p><strong>Dropping:</strong> {selectedDroppingPoint}</p>
               </div>
 
               <div className="passengers-scroll-list">
@@ -1535,7 +1171,7 @@ export default function App() {
               </div>
 
               <div className="contact-section">
-                <h4>Contact Info (For Ticket SMS & Email)</h4>
+                <h4>Contact Info</h4>
                 <div className="form-row">
                   <div className="form-group flex-1">
                     <label>Mobile Number</label>
@@ -1573,18 +1209,12 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL 2.5: PAYMENT GATEWAY CHECKOUT SCREEN */}
+      {/* MODAL: PAYMENT GATEWAY SCREEN */}
       {showPaymentModal && pendingBookingData && (
         <div className="modal-backdrop no-print">
           <div className="modal-box payment-gateway-modal">
             <div className="modal-header">
-              <div className="payment-brand">
-                <span className="lock-icon">🔒</span>
-                <div>
-                  <h3>ANHAR Secure Payments</h3>
-                  <small>256-bit Encrypted Checkout</small>
-                </div>
-              </div>
+              <h3>Checkout</h3>
               <button type="button" className="close-btn" onClick={() => setShowPaymentModal(false)}>✕</button>
             </div>
 
@@ -1597,12 +1227,6 @@ export default function App() {
                 <span>GST (5%)</span>
                 <span>₹{pendingBookingData.gstAmount}</span>
               </div>
-              {useWalletOffset && walletDeductionPossible > 0 && (
-                <div className="breakdown-row wallet-discount-line">
-                  <span>ANHAR Wallet Applied</span>
-                  <span>₹{walletDeductionPossible}</span>
-                </div>
-              )}
               <hr className="breakdown-divider" />
               <div className="breakdown-row grand-total-row">
                 <strong>Net Payable Amount</strong>
@@ -1610,298 +1234,84 @@ export default function App() {
               </div>
             </div>
 
-            <div 
-              className={`wallet-deduct-card ${useWalletOffset ? 'active' : ''}`} 
-              onClick={() => setUseWalletOffset(!useWalletOffset)}
-            >
-              <div className="wallet-checkbox-custom">
-                {useWalletOffset ? '✔' : ''}
-              </div>
-              <div className="wallet-details-text">
-                <div className="wallet-title-row">
-                  <strong>Use ANHAR Wallet Balance</strong>
-                  <span className="balance-pill">Available: ₹{walletBalance}</span>
-                </div>
-                <p>
-                  {walletBalance === 0 
-                    ? 'No balance available. Earn by reselling tickets or adding funds!' 
-                    : useWalletOffset 
-                      ? `Applied ₹${walletDeductionPossible} discount from wallet!` 
-                      : `Click to deduct up to ₹${walletDeductionPossible} from this bill.`}
-                </p>
-              </div>
-            </div>
-
-            {finalPayableAfterWallet > 0 ? (
-              <>
-                <div className="payment-method-tabs">
-                  <button 
-                    type="button" 
-                    className={`pay-tab ${paymentMethod === 'upi' ? 'active' : ''}`}
-                    onClick={() => setPaymentMethod('upi')}
-                  >
-                    UPI (GPay / PhonePe)
-                  </button>
-                  <button 
-                    type="button" 
-                    className={`pay-tab ${paymentMethod === 'card' ? 'active' : ''}`}
-                    onClick={() => setPaymentMethod('card')}
-                  >
-                    Debit / Credit Card
-                  </button>
-                </div>
-
-                {paymentMethod === 'upi' && (
-                  <div className="payment-body-panel">
-                    <div className="upi-app-selector">
-                      <div 
-                        className={`upi-app-pill ${upiOption === 'gpay' ? 'selected' : ''}`}
-                        onClick={() => setUpiOption('gpay')}
-                      >
-                        Google Pay
-                      </div>
-                      <div 
-                        className={`upi-app-pill ${upiOption === 'phonepe' ? 'selected' : ''}`}
-                        onClick={() => setUpiOption('phonepe')}
-                      >
-                        PhonePe
-                      </div>
-                      <div 
-                        className={`upi-app-pill ${upiOption === 'paytm' ? 'selected' : ''}`}
-                        onClick={() => setUpiOption('paytm')}
-                      >
-                        Paytm UPI
-                      </div>
-                    </div>
-
-                    <div className="upi-qr-display">
-                      <img 
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=upi://pay?pa=anharbus@icici&pn=ANHARBUS&am=${finalPayableAfterWallet}&cu=INR`} 
-                        alt="UPI QR Code" 
-                        className="payment-qr"
-                      />
-                      <p>Scan with any UPI App to Pay</p>
-                      <small>UPI ID: <strong>anharbus@icici</strong></small>
-                    </div>
-                  </div>
-                )}
-
-                {paymentMethod === 'card' && (
-                  <div className="payment-body-panel">
-                    <div className="form-group">
-                      <label>Card Number</label>
-                      <input type="text" placeholder="XXXX XXXX XXXX XXXX" defaultValue="4532 8921 7842 1109" />
-                    </div>
-                    <div className="form-row">
-                      <div className="form-group flex-1">
-                        <label>Expiry (MM/YY)</label>
-                        <input type="text" placeholder="MM/YY" defaultValue="08/29" />
-                      </div>
-                      <div className="form-group flex-1">
-                        <label>CVV</label>
-                        <input type="password" placeholder="•••" defaultValue="428" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="wallet-full-coverage-banner">
-                🎉 Full fare covered by your ANHAR Wallet balance! No extra payment required.
-              </div>
-            )}
-
             <div className="payment-footer">
               <button className="confirm-btn pay-now-btn" onClick={handlePaymentSuccess}>
-                {finalPayableAfterWallet > 0 
-                  ? `Pay ₹${finalPayableAfterWallet} & Confirm Booking` 
-                  : 'Confirm Booking via Wallet'}
+                Pay ₹{finalPayableAfterWallet} & Confirm Booking
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 3: PARTIAL RESALE LISTING */}
-      {resellingBooking && (
-        <div className="modal-backdrop no-print">
-          <div className="modal-box">
-            <div className="modal-header">
-              <h3>Partial Ticket Resale</h3>
-              <button type="button" className="close-btn" onClick={() => setResellingBooking(null)}>✕</button>
+      {/* PRINT TICKET MODAL */}
+      {viewTicket && (
+        <div className="modal-backdrop printable-modal-backdrop">
+          <div className="printable-ticket-wrapper">
+            <div className="ticket-actions-bar no-print">
+              <button className="print-action-btn" onClick={() => window.print()}>🖨️ Print Ticket</button>
+              <button className="close-ticket-btn" onClick={() => setViewTicket(null)}>✕ Close</button>
             </div>
-
-            <p className="resale-explainer">
-              Select only the seats you want to resale. Unselected seats remain confirmed for your trip.
-            </p>
-
-            <div className="resale-seat-picker">
-              <label>Select Seats to List for Sale:</label>
-              <div className="seat-checkboxes-grid">
-                {(resellingBooking.passengers || []).map((p) => {
-                  const isChecked = seatsToResell.includes(p.seatNumber)
-                  return (
-                    <div 
-                      key={p.seatNumber} 
-                      className={`seat-selectable-card ${isChecked ? 'checked' : ''}`}
-                      onClick={() => toggleSeatToResell(p.seatNumber)}
-                    >
-                      <input type="checkbox" checked={isChecked} readOnly />
-                      <div>
-                        <strong>Seat {p.seatNumber}</strong>
-                        <span>{p.name}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+            <div className="boarding-pass">
+              <h2>🚌 ANHAR BUS</h2>
+              <p>PNR: <strong>{viewTicket.pnr}</strong> | Bus: {viewTicket.busName}</p>
+              <p>Route: {viewTicket.route} | Date: {viewTicket.journeyDate} at {viewTicket.departure}</p>
+              <p>Status: <strong>{viewTicket.status}</strong></p>
             </div>
-
-            <div className="markup-slider-box">
-              <div className="markup-header">
-                <label>Set Resale Price per Seat</label>
-                <span className="price-tag">
-                  ₹{resellingBooking.unitPrice + Number(resaleMarkup)} 
-                  <small> (+₹{resaleMarkup} max ₹50)</small>
-                </span>
-              </div>
-              <input 
-                type="range" 
-                min="0" 
-                max="50" 
-                step="10" 
-                value={resaleMarkup} 
-                onChange={(e) => setResaleMarkup(e.target.value)}
-              />
-              <span className="cap-note">As per ANHAR policy, max markup allowed is ₹50 over base fare.</span>
-            </div>
-
-            <div className="resale-payout-preview">
-              <p>Seats Selected: <strong>{seatsToResell.length}</strong></p>
-              <p>Wallet Credit upon sale: <strong>₹{seatsToResell.length * (resellingBooking.unitPrice + Number(resaleMarkup))}</strong></p>
-            </div>
-
-            <button 
-              className="confirm-btn" 
-              disabled={seatsToResell.length === 0 || isSubmittingResale}
-              onClick={confirmResaleListing}
-            >
-              {isSubmittingResale ? 'Listing Seats...' : `List ${seatsToResell.length} Seat(s) on Resale Marketplace`}
-            </button>
           </div>
         </div>
       )}
 
-      {/* MODAL 4: PASSENGER ONBOARDING (NAME, EMAIL & PHONE OTP) */}
+      {/* LOGIN MODAL */}
       {showLoginModal && (
         <div className="modal-backdrop no-print">
           <div className="modal-box" style={{ maxWidth: '420px' }}>
             <div className="modal-header">
               <h3>{loginStep === 'DETAILS' ? 'Passenger Verification' : 'Verify Mobile OTP'}</h3>
-              <button 
-                type="button" 
-                className="close-btn" 
-                onClick={() => {
-                  setShowLoginModal(false)
-                  setLoginStep('DETAILS')
-                }}
-              >
-                ✕
-              </button>
+              <button type="button" className="close-btn" onClick={() => setShowLoginModal(false)}>✕</button>
             </div>
 
             {loginStep === 'DETAILS' ? (
               <form onSubmit={handleRequestOtp}>
-                <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '1.2rem', lineHeight: '1.4' }}>
-                  Enter your details to receive booking confirmations and manage ticket resale payouts.
-                </p>
-
                 <div className="form-group">
                   <label>Full Name</label>
                   <input
                     type="text"
                     required
-                    placeholder="Enter your full name"
+                    placeholder="Enter your name"
                     value={loginForm.name}
                     onChange={(e) => setLoginForm({ ...loginForm, name: e.target.value })}
                   />
                 </div>
-
                 <div className="form-group">
-                  <label>Email Address</label>
+                  <label>Mobile Number</label>
                   <input
-                    type="email"
+                    type="tel"
                     required
-                    placeholder="name@example.com"
-                    value={loginForm.email}
-                    onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                    maxLength="10"
+                    placeholder="10-digit mobile"
+                    value={loginForm.phone}
+                    onChange={(e) => setLoginForm({ ...loginForm, phone: e.target.value.replace(/\D/g, '') })}
                   />
                 </div>
-
-                <div className="form-group">
-                  <label>Mobile Number (For SMS OTP)</label>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, color: '#334155', fontSize: '0.95rem' }}>+91</span>
-                    <input
-                      type="tel"
-                      required
-                      maxLength="10"
-                      pattern="[0-9]{10}"
-                      placeholder="10-digit mobile"
-                      value={loginForm.phone}
-                      onChange={(e) => setLoginForm({ ...loginForm, phone: e.target.value.replace(/\D/g, '') })}
-                    />
-                  </div>
-                </div>
-
-                <button 
-                  type="submit" 
-                  className="confirm-btn" 
-                  disabled={isSendingOtp}
-                  style={{ marginTop: '1.2rem', width: '100%' }}
-                >
-                  {isSendingOtp ? 'Sending OTP...' : 'Send OTP via SMS ➔'}
+                <button type="submit" className="confirm-btn" disabled={isSendingOtp}>
+                  {isSendingOtp ? 'Sending...' : 'Send OTP ➔'}
                 </button>
               </form>
             ) : (
               <form onSubmit={handleVerifyOtp}>
-                <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '1.2rem', lineHeight: '1.4' }}>
-                  Enter the 4-digit code sent to <strong>+91 {loginForm.phone}</strong>
-                </p>
-
                 <div className="form-group">
                   <label>Enter 4-Digit OTP</label>
                   <input
                     type="text"
                     required
-                    autoFocus
                     maxLength="4"
-                    pattern="[0-9]{4}"
-                    placeholder="••••"
-                    style={{ textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.4rem', fontWeight: 'bold' }}
                     value={otpInput}
                     onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
                   />
                 </div>
-
-                <div style={{ display: 'flex', gap: '0.8rem', marginTop: '1.2rem' }}>
-                  <button
-                    type="button"
-                    className="select-seat-btn"
-                    style={{ flex: 1 }}
-                    onClick={() => setLoginStep('DETAILS')}
-                  >
-                    ← Edit Details
-                  </button>
-                  <button
-                    type="submit"
-                    className="confirm-btn"
-                    disabled={isVerifyingOtp}
-                    style={{ flex: 2 }}
-                  >
-                    {isVerifyingOtp ? 'Verifying...' : 'Verify & Continue'}
-                  </button>
-                </div>
+                <button type="submit" className="confirm-btn" disabled={isVerifyingOtp}>
+                  {isVerifyingOtp ? 'Verifying...' : 'Verify & Continue'}
+                </button>
               </form>
             )}
           </div>

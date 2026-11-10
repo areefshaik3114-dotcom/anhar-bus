@@ -45,7 +45,7 @@ export const api = {
     return res.json()
   },
 
-  // 5.5 Cancel booking with redBus tiered refund & wallet credit
+  // 6. Cancel booking with redBus tiered refund & wallet credit
   cancelBooking: async (pnr) => {
     const res = await fetch(`${API_BASE}/api/bookings/cancel`, {
       method: 'POST',
@@ -55,7 +55,33 @@ export const api = {
     return res.json()
   },
 
-  // 6. MongoDB Atlas User Wallet Endpoints
+  // 7. Dynamic Bus Search from MongoDB Atlas
+  searchBuses: async (source, destination) => {
+    const query = new URLSearchParams()
+    if (source) query.append('source', source)
+    if (destination) query.append('destination', destination)
+    const res = await fetch(`${API_BASE}/api/buses/search?${query.toString()}`)
+    const data = await res.json()
+    return data.buses || []
+  },
+
+  // 8. Operator: Add new bus schedule
+  createOperatorBus: async (busData) => {
+    const res = await fetch(`${API_BASE}/api/operator/buses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(busData)
+    })
+    return res.json()
+  },
+
+  // 9. Operator: Fetch live passenger manifest chart
+  getTripManifest: async (busId, date) => {
+    const res = await fetch(`${API_BASE}/api/operator/manifest/${busId}/${date}`)
+    return res.json()
+  },
+
+  // 10. MongoDB Atlas User Wallet Endpoints
   getWallet: async (phone) => {
     const res = await fetch(`${API_BASE}/api/wallet/${phone}`)
     return res.json()
@@ -70,7 +96,7 @@ export const api = {
     return res.json()
   },
 
-  // 7. Passenger OTP Verification Endpoints
+  // 11. Passenger OTP Verification Endpoints
   sendOtp: async (phone) => {
     const res = await fetch(`${API_BASE}/api/auth/send-otp`, {
       method: 'POST',
