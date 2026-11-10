@@ -1,3 +1,4 @@
+const Bus = require('./models/Bus');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -450,6 +451,84 @@ app.post('/api/auth/verify-otp', async (req, res) => {
 
 // 10. Bind and listen on all network interfaces
 const PORT = process.env.PORT || 5000;
+// A. Search active buses dynamically from MongoDB Atlas
+app.get('/api/buses/search', async (req, res) => {
+  try {
+    const { source, destination } = req.query;
+    const filter = { isActive: true };
+    if (source) filter.source = new RegExp(`^${source}$`, 'i');
+    if (destination) filter.destination = new RegExp(`^${destination}$`, 'i');
+
+    let buses = await Bus.find(filter).sort({ departureHour: 1 });
+
+    // Seed default fleet into MongoDB if collection is currently empty
+    if (buses.length === 0 && !source && !destination) {
+      const defaultBuses = [
+        {
+          name: 'ANHAR Super Luxury AC Sleeper',
+          busNumber: 'AP 04 TX 9924',
+          operatorPhone: '8977733885',
+          source: 'Bengaluru',
+          destination: 'Hyderabad',
+          departure: '21:30',
+          departureHour: 21.5,
+          arrival: '06:00',
+          duration: '8h 30m',
+          category: 'AC Sleeper',
+          type: '2+1 AC Sleeper',
+          price: 1150,
+          totalSeats: 24,
+          boardingPoints: [
+            { name: 'Majestic (Bus Stand Platform 4)', timeOffset: '+0h 00m' },
+            { name: 'Hebbal (Near Flyover)', timeOffset: '+0h 45m' }
+          ],
+          droppingPoints: [
+            { name: 'Shamshabad (Toll Gate)', timeOffset: '+7h 30m' },
+            { name: 'Lakdikapul (Opp. Metro Pillar 1042)', timeOffset: '+8h 30m' }
+          ]
+        },
+        {
+          name: 'ANHAR Multi-Axle Volvo Semi-Sleeper',
+          busNumber: 'KA 01 F 4402',
+          operatorPhone: '8977733885',
+          source: 'Bengaluru',
+          destination: 'Hyderabad',
+          departure: '22:15',
+          departureHour: 22.25,
+          arrival: '06:45',
+          duration: '8h 30m',
+          category: 'Volvo',
+          type: '2+2 Pushback AC',
+          price: 890,
+          totalSeats: 24,
+          boardingPoints: [
+            { name: 'Anand Rao Circle (Near Flyover)', timeOffset: '+0h 00m' },
+            { name: 'Electronic City Toll Plaza', timeOffset: '+0h 40m' }
+          ],
+          droppingPoints: [
+            { name: 'Gachibowli (ORR Junction)', timeOffset: '+7h 45m' },
+            { name: 'Ameerpet (Near Big Bazaar)', timeOffset: '+8h 30m' }
+          ]
+        }
+      ];
+      buses = await Bus.insertMany(defaultBuses);
+    }
+
+    res.json({ success: true, buses });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// B. Operator endpoint: Add a new bus trip into MongoDB
+app.post('/api/operator/buses', async (req, res) => {
+  try {
+    const newBus = await Bus.create(req.body);
+    res.status(201).json({ success: true, bus: newBus });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`ANHAR BUS Server live on port ${PORT}`);
 });
