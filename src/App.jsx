@@ -55,7 +55,14 @@ export default function App() {
   // In-App Wallet balance
   const [walletBalance, setWalletBalance] = useState(0)
 
-  // Dynamic Buses from MongoDB
+  // Operator Authentication State
+  const [isOperatorAuthorized, setIsOperatorAuthorized] = useState(() => {
+    return sessionStorage.getItem('anhar_operator_auth') === 'true'
+  })
+  const [operatorPinInput, setOperatorPinInput] = useState('')
+  const [showPinModal, setShowPinModal] = useState(false)
+
+  // Dynamic Buses & Fleet Manifest States
   const [dbBuses, setDbBuses] = useState([])
   const [selectedManifestBus, setSelectedManifestBus] = useState(null)
   const [manifestList, setManifestList] = useState([])
@@ -408,7 +415,28 @@ export default function App() {
     }
   }
 
-  // Operator Manifest Handlers
+  // Operator Verification & Manifest Handlers
+  const handleOperatorLogin = (e) => {
+    e.preventDefault()
+    // Secure PIN: Change 9924 to your preferred secret PIN
+    if (operatorPinInput.trim() === '9924') {
+      sessionStorage.setItem('anhar_operator_auth', 'true')
+      setIsOperatorAuthorized(true)
+      setShowPinModal(false)
+      setActiveTab('operator')
+      setOperatorPinInput('')
+    } else {
+      alert('Unauthorized! Incorrect Operator Security PIN.')
+      setOperatorPinInput('')
+    }
+  }
+
+  const handleOperatorLogout = () => {
+    sessionStorage.removeItem('anhar_operator_auth')
+    setIsOperatorAuthorized(false)
+    setActiveTab('book')
+  }
+
   const handleViewManifest = async (busId) => {
     setSelectedManifestBus(busId)
     setIsLoadingManifest(true)
@@ -677,9 +705,15 @@ export default function App() {
             </button>
             <button 
               className={`nav-btn ${activeTab === 'operator' ? 'active' : ''}`} 
-              onClick={() => setActiveTab('operator')}
+              onClick={() => {
+                if (isOperatorAuthorized) {
+                  setActiveTab('operator')
+                } else {
+                  setShowPinModal(true)
+                }
+              }}
             >
-              🚍 Operator Desk
+              🔒 Operator Portal
             </button>
             <div className="wallet-chip" onClick={addFundsToWallet} title="Click to Top-Up Wallet">
               💰 Wallet: <strong>₹{walletBalance}</strong> <span className="wallet-plus">+</span>
@@ -929,21 +963,30 @@ export default function App() {
         </main>
       )}
 
-      {/* TAB 4: OPERATOR DESK & PASSENGER MANIFEST */}
-      {activeTab === 'operator' && (
+      {/* TAB 4: OPERATOR DESK & PASSENGER MANIFEST (RESTRICTED TO AUTHENTICATED OPERATORS) */}
+      {activeTab === 'operator' && isOperatorAuthorized && (
         <main className="results-container no-print">
           <div className="section-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <h2>Bus Operator Desk & Manifest</h2>
-              <p>Live passenger charts, boarding verification, and fleet management</p>
+              <h2>🚍 Fleet Operator Desk</h2>
+              <p>Restricted Portal: Passenger Manifests & Bus Scheduling</p>
             </div>
-            <button 
-              className="confirm-btn" 
-              style={{ width: 'auto', padding: '0.6rem 1.2rem' }}
-              onClick={() => setShowAddBusModal(true)}
-            >
-              + Add New Bus Trip
-            </button>
+            <div style={{ display: 'flex', gap: '0.8rem' }}>
+              <button 
+                className="confirm-btn" 
+                style={{ width: 'auto', padding: '0.55rem 1rem' }}
+                onClick={() => setShowAddBusModal(true)}
+              >
+                + Add New Bus Trip
+              </button>
+              <button 
+                className="select-seat-btn"
+                style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #f87171' }}
+                onClick={handleOperatorLogout}
+              >
+                Lock / Exit Portal
+              </button>
+            </div>
           </div>
 
           <div className="bus-list">
@@ -1006,6 +1049,41 @@ export default function App() {
             })}
           </div>
         </main>
+      )}
+
+      {/* MODAL: OPERATOR SECURITY PIN ENTRY */}
+      {showPinModal && (
+        <div className="modal-backdrop no-print">
+          <div className="modal-box" style={{ maxWidth: '380px' }}>
+            <form onSubmit={handleOperatorLogin}>
+              <div className="modal-header">
+                <h3>🔒 Operator Verification</h3>
+                <button type="button" className="close-btn" onClick={() => setShowPinModal(false)}>✕</button>
+              </div>
+              <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '1.2rem' }}>
+                This portal is restricted to authorized bus fleet owners and conductors only.
+              </p>
+
+              <div className="form-group">
+                <label>Enter Operator Security PIN</label>
+                <input 
+                  type="password"
+                  autoFocus
+                  required
+                  maxLength="6"
+                  placeholder="Enter PIN"
+                  style={{ textAlign: 'center', fontSize: '1.4rem', letterSpacing: '0.3rem' }}
+                  value={operatorPinInput}
+                  onChange={(e) => setOperatorPinInput(e.target.value)}
+                />
+              </div>
+
+              <button type="submit" className="confirm-btn" style={{ marginTop: '1rem', width: '100%' }}>
+                Unlock Operator Desk ➔
+              </button>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* MODAL: ADD OPERATOR BUS */}
