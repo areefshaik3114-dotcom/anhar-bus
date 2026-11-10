@@ -27,6 +27,102 @@ const CITY_POINTS = {
   ]
 }
 
+// Built-in starter fleet so buses are never blank
+const DEFAULT_STARTER_FLEET = [
+  {
+    _id: 'default-bus-1',
+    name: 'ANHAR Multi-Axle Volvo Semi-Sleeper',
+    busNumber: 'KA 01 F 4402',
+    operatorPhone: '8977733885',
+    source: 'Bengaluru',
+    destination: 'Hyderabad',
+    departure: '21:30',
+    departureHour: 21.5,
+    arrival: '06:00',
+    duration: '8h 30m',
+    layoutType: 'MIXED_SEATER_SLEEPER',
+    category: 'Mixed Seater & Sleeper',
+    price: 650,
+    totalSeats: 30,
+    seats: [
+      ...Array.from({ length: 15 }, (_, i) => ({
+        seatNumber: i + 1,
+        seatLabel: `L${i + 1}`,
+        deck: 'LOWER',
+        side: [1, 4, 7, 10].includes(i + 1) ? 'LEFT' : 'RIGHT',
+        type: 'PUSHBACK',
+        price: [13, 14, 15].includes(i + 1) ? 590 : ([1, 4, 7, 10].includes(i + 1) ? 650 : 700)
+      })),
+      ...Array.from({ length: 15 }, (_, i) => ({
+        seatNumber: i + 16,
+        seatLabel: `U${i + 1}`,
+        deck: 'UPPER',
+        side: [16, 19, 22, 25].includes(i + 16) ? 'LEFT' : 'RIGHT',
+        type: 'SLEEPER',
+        price: [28, 29, 30].includes(i + 16) ? 750 : ([16, 19, 22, 25].includes(i + 16) ? 900 : 950)
+      }))
+    ]
+  },
+  {
+    _id: 'default-bus-2',
+    name: 'ANHAR Royal All-Sleeper AC',
+    busNumber: 'AP 04 TX 9924',
+    operatorPhone: '8977733885',
+    source: 'Bengaluru',
+    destination: 'Hyderabad',
+    departure: '22:15',
+    departureHour: 22.25,
+    arrival: '06:45',
+    duration: '8h 30m',
+    layoutType: 'ALL_SLEEPER',
+    category: 'AC Sleeper',
+    price: 950,
+    totalSeats: 30,
+    seats: [
+      ...Array.from({ length: 15 }, (_, i) => ({
+        seatNumber: i + 1,
+        seatLabel: `L${i + 1}`,
+        deck: 'LOWER',
+        side: [1, 4, 7, 10].includes(i + 1) ? 'LEFT' : 'RIGHT',
+        type: 'SLEEPER',
+        price: [13, 14, 15].includes(i + 1) ? 850 : ([1, 4, 7, 10].includes(i + 1) ? 950 : 1000)
+      })),
+      ...Array.from({ length: 15 }, (_, i) => ({
+        seatNumber: i + 16,
+        seatLabel: `U${i + 1}`,
+        deck: 'UPPER',
+        side: [16, 19, 22, 25].includes(i + 16) ? 'LEFT' : 'RIGHT',
+        type: 'SLEEPER',
+        price: [28, 29, 30].includes(i + 16) ? 900 : ([16, 19, 22, 25].includes(i + 16) ? 1100 : 1150)
+      }))
+    ]
+  },
+  {
+    _id: 'default-bus-3',
+    name: 'ANHAR Guntakal Superfast Express',
+    busNumber: 'AP 21 Z 1042',
+    operatorPhone: '8977733885',
+    source: 'Bengaluru',
+    destination: 'Guntakal',
+    departure: '07:30',
+    departureHour: 7.5,
+    arrival: '14:30',
+    duration: '7h 00m',
+    layoutType: 'PUSHBACK_ONLY',
+    category: 'Pushback Seater',
+    price: 520,
+    totalSeats: 24,
+    seats: Array.from({ length: 24 }, (_, i) => ({
+      seatNumber: i + 1,
+      seatLabel: `S${i + 1}`,
+      deck: 'SINGLE',
+      side: [1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21].includes(i + 1) ? 'LEFT' : 'RIGHT',
+      type: 'PUSHBACK',
+      price: [21, 22, 23, 24].includes(i + 1) ? 480 : 520
+    }))
+  }
+]
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('book')
   const [source, setSource] = useState('Bengaluru')
@@ -36,16 +132,16 @@ export default function App() {
   const [selectedSeats, setSelectedSeats] = useState([])
   const [selectedDeckView, setSelectedDeckView] = useState('LOWER') // 'LOWER' | 'UPPER' | 'SINGLE'
 
-  // Dynamic Boarding and Dropping points
+  // Pick-up and Drop selection
   const [selectedBoardingPoint, setSelectedBoardingPoint] = useState('')
   const [selectedDroppingPoint, setSelectedDroppingPoint] = useState('')
 
-  // User Session & Login Modal State
+  // User Profile & Authentication State
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('anhar_user_phone') || '')
   const [currentUserName, setCurrentUserName] = useState(() => localStorage.getItem('anhar_user_name') || '')
   const [currentUserEmail, setCurrentUserEmail] = useState(() => localStorage.getItem('anhar_user_email') || '')
 
-  // OTP Verification States
+  // OTP Login Modal State
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [loginStep, setLoginStep] = useState('DETAILS')
   const [loginForm, setLoginForm] = useState({ name: '', email: '', phone: '' })
@@ -53,10 +149,10 @@ export default function App() {
   const [isSendingOtp, setIsSendingOtp] = useState(false)
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false)
 
-  // In-App Wallet balance
+  // Wallet
   const [walletBalance, setWalletBalance] = useState(0)
 
-  // Protected Operator State
+  // Operator Desk Protection
   const [isOperatorAuthorized, setIsOperatorAuthorized] = useState(() => sessionStorage.getItem('anhar_operator_auth') === 'true')
   const [operatorPinInput, setOperatorPinInput] = useState('')
   const [showPinModal, setShowPinModal] = useState(false)
@@ -68,7 +164,7 @@ export default function App() {
   const [isLoadingManifest, setIsLoadingManifest] = useState(false)
   const [showAddBusModal, setShowAddBusModal] = useState(false)
 
-  // Advanced Bus Config Form for Operators
+  // Add Bus Form State
   const [newBusForm, setNewBusForm] = useState({
     name: '',
     busNumber: '',
@@ -92,7 +188,7 @@ export default function App() {
   const [selectedTimeSlot, setSelectedTimeSlot] = useState('ALL')
   const [sortBy, setSortBy] = useState('PRICE_ASC')
 
-  // Passenger & Checkout Modal States
+  // Passenger Details & Checkout States
   const [showPassengerModal, setShowPassengerModal] = useState(false)
   const [passengerDetails, setPassengerDetails] = useState([])
   const [contactInfo, setContactInfo] = useState({
@@ -102,39 +198,20 @@ export default function App() {
 
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('upi')
-  const [upiOption, setUpiOption] = useState('gpay')
   const [useWalletOffset, setUseWalletOffset] = useState(false)
 
-  // User Bookings & Marketplace
+  // Bookings & Resale
   const [myBookings, setMyBookings] = useState([])
   const [resaleListings, setResaleListings] = useState([])
   const [viewTicket, setViewTicket] = useState(null)
-  const [currentTime, setCurrentTime] = useState(new Date())
+  const [resellingBooking, setResellingBooking] = useState(null)
+  const [seatsToResell, setSeatsToResell] = useState([])
+  const [resaleMarkup, setResaleMarkup] = useState(0)
+  const [isSubmittingResale, setIsSubmittingResale] = useState(false)
+  const [selectedResaleItem, setSelectedResaleItem] = useState(null)
+  const [buyerDetails, setBuyerDetails] = useState({ name: '', age: '', gender: 'Male', phone: '', email: '' })
 
-  // Real-time Cutoff Tracker
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  // Sync user wallet from MongoDB Atlas
-  useEffect(() => {
-    const fetchWallet = async () => {
-      if (currentUser) {
-        try {
-          const res = await api.getWallet(currentUser)
-          if (res && res.success) setWalletBalance(res.balance)
-        } catch (err) {
-          console.error('Wallet fetch error:', err)
-        }
-      } else {
-        setWalletBalance(0)
-      }
-    }
-    fetchWallet()
-  }, [currentUser])
-
-  // Refresh all backend data
+  // Refresh backend records
   const fetchLatestData = async () => {
     try {
       const [bookings, resale, buses] = await Promise.all([
@@ -144,9 +221,14 @@ export default function App() {
       ])
       if (Array.isArray(bookings)) setMyBookings(bookings)
       if (Array.isArray(resale)) setResaleListings(resale)
-      if (Array.isArray(buses) && buses.length > 0) setDbBuses(buses)
+      if (Array.isArray(buses) && buses.length > 0) {
+        setDbBuses(buses)
+      } else {
+        setDbBuses(DEFAULT_STARTER_FLEET)
+      }
     } catch (err) {
       console.error('Data refresh error:', err)
+      setDbBuses(DEFAULT_STARTER_FLEET)
     }
   }
 
@@ -154,23 +236,39 @@ export default function App() {
     fetchLatestData()
   }, [source, destination])
 
-  const userPersonalBookings = useMemo(() => {
-    if (!currentUser) return []
-    return myBookings.filter(b => b.contact?.phone === currentUser)
-  }, [myBookings, currentUser])
+  // Sync user wallet from MongoDB
+  useEffect(() => {
+    const fetchWallet = async () => {
+      if (currentUser) {
+        try {
+          const res = await api.getWallet(currentUser)
+          if (res && res.success) setWalletBalance(res.balance)
+        } catch (err) {
+          console.error('Wallet error:', err)
+        }
+      } else {
+        setWalletBalance(0)
+      }
+    }
+    fetchWallet()
+  }, [currentUser])
 
+  // Default Boarding/Dropping on Route change
   useEffect(() => {
     setSelectedSeats([])
     setSelectedBus(null)
-    const defaultBoarding = CITY_POINTS[source]?.[0]?.name || source
-    const defaultDropping = CITY_POINTS[destination]?.[0]?.name || destination
-    setSelectedBoardingPoint(defaultBoarding)
-    setSelectedDroppingPoint(defaultDropping)
+    setSelectedBoardingPoint(CITY_POINTS[source]?.[0]?.name || source)
+    setSelectedDroppingPoint(CITY_POINTS[destination]?.[0]?.name || destination)
   }, [source, destination])
 
-  // Filter & Sort Logic for Buses
+  // Active Fleet Selection
+  const activeFleet = useMemo(() => {
+    return dbBuses.length > 0 ? dbBuses : DEFAULT_STARTER_FLEET
+  }, [dbBuses])
+
+  // Filtered & Sorted Bus Fleet
   const filteredAndSortedBuses = useMemo(() => {
-    return dbBuses
+    return activeFleet
       .filter((bus) => {
         if (selectedTypeFilter !== 'ALL' && bus.category !== selectedTypeFilter) return false
         if (selectedTimeSlot === 'MORNING' && (bus.departureHour < 6 || bus.departureHour >= 12)) return false
@@ -185,7 +283,12 @@ export default function App() {
         if (sortBy === 'RATING_DESC') return 4.8 - 4.5
         return 0
       })
-  }, [dbBuses, selectedTypeFilter, selectedTimeSlot, sortBy])
+  }, [activeFleet, selectedTypeFilter, selectedTimeSlot, sortBy])
+
+  const userPersonalBookings = useMemo(() => {
+    if (!currentUser) return []
+    return myBookings.filter(b => b.contact?.phone === currentUser)
+  }, [myBookings, currentUser])
 
   const isSeatBooked = (seatNum, busId) => {
     return myBookings.some(b => 
@@ -203,7 +306,7 @@ export default function App() {
     )
 
     if (resaleItem) {
-      alert(`Seat ${seatObj.seatNumber} is listed on the Resale Marketplace for ₹${resaleItem.resalePrice}!`)
+      openBuyerModal(resaleItem)
       return
     }
 
@@ -241,6 +344,9 @@ export default function App() {
       age: '',
       gender: 'Male'
     })))
+    if (currentUser && !contactInfo.phone) {
+      setContactInfo(prev => ({ ...prev, phone: currentUser, email: currentUserEmail || prev.email }))
+    }
     setShowPassengerModal(true)
   }
 
@@ -265,7 +371,7 @@ export default function App() {
     let remainingToPay = grandTotal
 
     if (useWalletOffset && walletBalance > 0) {
-      deduction = Math.min(walletBalance, grandTotal)
+      deduction = walletDeductionPossible
       try {
         await api.updateWallet(currentUser, -deduction)
         setWalletBalance(prev => prev - deduction)
@@ -335,7 +441,133 @@ export default function App() {
     }
   }
 
-  // Operator Verification & Manifest Handlers
+  // Resale Logic
+  const openResaleModal = (b) => {
+    setResellingBooking(b)
+    setSeatsToResell([])
+    setResaleMarkup(0)
+  }
+
+  const toggleSeatToResell = (seatNum) => {
+    if (seatsToResell.includes(seatNum)) {
+      setSeatsToResell(seatsToResell.filter(s => s !== seatNum))
+    } else {
+      setSeatsToResell([...seatsToResell, seatNum])
+    }
+  }
+
+  const confirmResaleListing = async () => {
+    if (seatsToResell.length === 0 || isSubmittingResale) return
+    setIsSubmittingResale(true)
+    try {
+      const listingCutoff = Date.now() + 3 * 60 * 60 * 1000
+      const cleanSellerPhone = String(resellingBooking.contact?.phone || currentUser || '').replace(/\D/g, '').slice(-10)
+
+      const newListings = seatsToResell.map((seatNum) => ({
+        id: `RES-${Date.now()}-${seatNum}`,
+        busId: resellingBooking.busId,
+        busName: resellingBooking.busName,
+        busNumber: resellingBooking.busNumber || 'AP 04 TX 9924',
+        route: resellingBooking.route,
+        date: resellingBooking.journeyDate,
+        time: resellingBooking.departure,
+        cutoffTimestamp: listingCutoff,
+        boarding: resellingBooking.boarding,
+        dropping: resellingBooking.dropping,
+        seatNumber: seatNum,
+        originalPrice: resellingBooking.unitPrice,
+        resalePrice: resellingBooking.unitPrice + Number(resaleMarkup),
+        sellerPnr: resellingBooking.pnr,
+        sellerName: resellingBooking.passengers.find(p => p.seatNumber === seatNum)?.name || currentUserName || 'Passenger',
+        sellerPhone: cleanSellerPhone,
+        status: 'AVAILABLE'
+      }))
+
+      const updatedBookings = myBookings.map(b => {
+        if (b.pnr === resellingBooking.pnr) {
+          const remaining = b.passengers.filter(p => !seatsToResell.includes(p.seatNumber))
+          return {
+            ...b,
+            passengers: remaining,
+            totalPaid: remaining.length * b.unitPrice,
+            status: remaining.length === 0 ? 'ALL_RESOLD' : 'PARTIALLY_RESOLD'
+          }
+        }
+        return b
+      })
+
+      await api.publishResale(newListings, updatedBookings)
+      await fetchLatestData()
+      setResellingBooking(null)
+      setSeatsToResell([])
+      alert(`Listed ${newListings.length} seat(s) for resale!`)
+      setActiveTab('resale-market')
+    } catch (err) {
+      alert('Failed to publish resale listing.')
+    } finally {
+      setIsSubmittingResale(false)
+    }
+  }
+
+  const openBuyerModal = (listing) => {
+    setSelectedResaleItem(listing)
+    setBuyerDetails({
+      name: currentUserName || '',
+      age: '',
+      gender: 'Male',
+      phone: currentUser || '',
+      email: currentUserEmail || ''
+    })
+  }
+
+  const handleResalePurchaseSubmit = async (e) => {
+    e.preventDefault()
+    const cleanBuyerPhone = String(buyerDetails.phone).replace(/\D/g, '').slice(-10)
+    const newBuyerPnr = 'RES-ANH' + Math.floor(100000 + Math.random() * 900000)
+
+    const newBuyerBooking = {
+      pnr: newBuyerPnr,
+      busId: selectedResaleItem.busId,
+      busName: selectedResaleItem.busName,
+      busNumber: selectedResaleItem.busNumber || 'AP 04 TX 9924',
+      route: selectedResaleItem.route,
+      departure: selectedResaleItem.time,
+      arrival: 'Next Morning',
+      journeyDate: selectedResaleItem.date,
+      boarding: selectedResaleItem.boarding,
+      dropping: selectedResaleItem.dropping,
+      unitPrice: selectedResaleItem.resalePrice,
+      passengers: [{
+        seatNumber: selectedResaleItem.seatNumber,
+        name: buyerDetails.name,
+        age: Number(buyerDetails.age),
+        gender: buyerDetails.gender
+      }],
+      contact: { phone: cleanBuyerPhone, email: buyerDetails.email },
+      sellerPnr: selectedResaleItem.sellerPnr,
+      sellerPhone: selectedResaleItem.sellerPhone,
+      baseFare: selectedResaleItem.resalePrice,
+      totalPaid: selectedResaleItem.resalePrice,
+      paymentMethod: 'UPI / INSTANT',
+      status: 'VERIFIED_RESALE_TICKET'
+    }
+
+    const res = await api.buyResale(selectedResaleItem.id, newBuyerBooking)
+    if (res.success) {
+      if (cleanBuyerPhone) {
+        localStorage.setItem('anhar_user_phone', cleanBuyerPhone)
+        setCurrentUser(cleanBuyerPhone)
+      }
+      await fetchLatestData()
+      setSelectedResaleItem(null)
+      alert(`Ticket confirmed: PNR ${newBuyerPnr}`)
+      setActiveTab('my-bookings')
+    } else {
+      alert(res.message || 'Failed to complete purchase.')
+    }
+  }
+
+  // Operator Handlers
   const handleOperatorLogin = (e) => {
     e.preventDefault()
     if (operatorPinInput.trim() === '9924') {
@@ -365,14 +597,14 @@ export default function App() {
       }
       const res = await api.createOperatorBus(payload)
       if (res && res.success) {
-        alert(`Bus ${res.bus.busNumber} published to fleet!`)
+        alert(`Bus ${res.bus.busNumber} published with custom seat prices!`)
         setShowAddBusModal(false)
         await fetchLatestData()
       } else {
         alert(res?.error || 'Failed to add bus.')
       }
     } catch (err) {
-      alert('Network error while creating bus schedule.')
+      alert('Network error while adding bus schedule.')
     }
   }
 
@@ -389,6 +621,7 @@ export default function App() {
     }
   }
 
+  // OTP Authentication Handlers
   const handleRequestOtp = async (e) => {
     e.preventDefault()
     const cleanPhone = loginForm.phone.replace(/\D/g, '').slice(-10)
@@ -398,7 +631,7 @@ export default function App() {
       const res = await api.sendOtp(cleanPhone)
       if (res && res.success) {
         setLoginStep('OTP')
-        alert(res.devOtp ? `Dev Code: ${res.devOtp}` : `OTP sent to +91 ${cleanPhone}`)
+        alert(res.devOtp ? `Dev Code: ${res.devOtp}` : `OTP sent via SMS to +91 ${cleanPhone}`)
       } else {
         alert(res?.message || 'Failed to send OTP.')
       }
@@ -443,7 +676,7 @@ export default function App() {
         const res = await api.updateWallet(currentUser, amount)
         if (res && res.success) setWalletBalance(res.balance)
       } catch (err) {
-        alert('Failed to update wallet in database.')
+        alert('Failed to update wallet.')
       }
     }
   }
@@ -637,6 +870,7 @@ export default function App() {
                             <div className="legend-item"><span className="legend-sample available-sample"></span> Available</div>
                             <div className="legend-item"><span className="legend-sample selected-sample"></span> Selected</div>
                             <div className="legend-item"><span className="legend-sample booked-sample"></span> Booked</div>
+                            <div className="legend-item"><span className="legend-sample resale-sample"></span> Resale ⚡</div>
                           </div>
                         </div>
 
@@ -667,16 +901,21 @@ export default function App() {
                               <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b' }}>Left Window</span>
                               {leftSideSeats.map(s => {
                                 const isSelected = selectedSeats.some(sel => sel.seatNumber === s.seatNumber)
-                                const isBooked = isSeatBooked(s.seatNumber, busKey)
+                                const resaleItem = resaleListings.find(
+                                  r => String(r.busId) === String(busKey) && Number(r.seatNumber) === Number(s.seatNumber) && r.status === 'AVAILABLE'
+                                )
+                                const isBooked = !resaleItem && isSeatBooked(s.seatNumber, busKey)
+
                                 let cls = 'seat-unit'
                                 if (s.type === 'SLEEPER') cls += ' sleeper-berth'
                                 if (isSelected) cls += ' seat-selected'
+                                else if (resaleItem) cls += ' seat-resale'
                                 else if (isBooked) cls += ' seat-booked'
 
                                 return (
                                   <button key={s.seatNumber} disabled={isBooked} className={cls} onClick={() => handleSeatClick(s, bus)}>
                                     <span>{s.seatLabel} {s.type === 'SLEEPER' ? '🛏️' : '💺'}</span>
-                                    <span className="seat-cost">₹{s.price}</span>
+                                    <span className="seat-cost">₹{resaleItem ? resaleItem.resalePrice : s.price}</span>
                                   </button>
                                 )
                               })}
@@ -688,16 +927,21 @@ export default function App() {
                               <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b' }}>Driver Side (Right)</span>
                               {rightSideSeats.map(s => {
                                 const isSelected = selectedSeats.some(sel => sel.seatNumber === s.seatNumber)
-                                const isBooked = isSeatBooked(s.seatNumber, busKey)
+                                const resaleItem = resaleListings.find(
+                                  r => String(r.busId) === String(busKey) && Number(r.seatNumber) === Number(s.seatNumber) && r.status === 'AVAILABLE'
+                                )
+                                const isBooked = !resaleItem && isSeatBooked(s.seatNumber, busKey)
+
                                 let cls = 'seat-unit'
                                 if (s.type === 'SLEEPER') cls += ' sleeper-berth'
                                 if (isSelected) cls += ' seat-selected'
+                                else if (resaleItem) cls += ' seat-resale'
                                 else if (isBooked) cls += ' seat-booked'
 
                                 return (
                                   <button key={s.seatNumber} disabled={isBooked} className={cls} onClick={() => handleSeatClick(s, bus)}>
                                     <span>{s.seatLabel} {s.type === 'SLEEPER' ? '🛏️' : '💺'}</span>
-                                    <span className="seat-cost">₹{s.price}</span>
+                                    <span className="seat-cost">₹{resaleItem ? resaleItem.resalePrice : s.price}</span>
                                   </button>
                                 )
                               })}
@@ -780,7 +1024,7 @@ export default function App() {
         <main className="results-container no-print">
           <div className="section-title-row">
             <h2>My Bookings</h2>
-            <p>View tickets, print conductor boarding passes, or cancel bookings</p>
+            <p>View tickets, print conductor boarding passes, list seats for resale, or cancel</p>
           </div>
 
           <div className="bus-list" style={{ marginTop: '1rem' }}>
@@ -812,9 +1056,14 @@ export default function App() {
                   <div className="booking-btn-row">
                     <button className="view-ticket-btn" onClick={() => setViewTicket(b)}>🖨️ View Ticket</button>
                     {b.status === 'CONFIRMED' && (
-                      <button className="cancel-ticket-btn" onClick={() => handleCancelBooking(b)}>
-                        ✕ Cancel Ticket
-                      </button>
+                      <>
+                        <button className="resale-trigger-btn" onClick={() => openResaleModal(b)}>
+                          🔄 Resale Seats ({b.passengers.length})
+                        </button>
+                        <button className="cancel-ticket-btn" onClick={() => handleCancelBooking(b)}>
+                          ✕ Cancel Ticket
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -835,10 +1084,17 @@ export default function App() {
           <div className="bus-list" style={{ marginTop: '1rem' }}>
             {resaleListings.map(item => (
               <div key={item.id} className="bus-card">
-                <h4>{item.busName} (Seat {item.seatNumber})</h4>
-                <p>{item.route} • {item.date} at {item.time}</p>
-                <p>📍 {item.boarding} ➔ 🎯 {item.dropping}</p>
-                <h3>₹{item.resalePrice}</h3>
+                <div className="bus-main-info">
+                  <div>
+                    <h4>{item.busName} (Seat {item.seatNumber})</h4>
+                    <p>{item.route} • {item.date} at {item.time}</p>
+                    <p style={{ fontSize: '0.85rem', color: '#64748b' }}>📍 {item.boarding} ➔ 🎯 {item.dropping}</p>
+                  </div>
+                  <h3>₹{item.resalePrice}</h3>
+                </div>
+                <button className="select-seat-btn" style={{ width: '100%', marginTop: '0.8rem' }} onClick={() => openBuyerModal(item)}>
+                  Buy Seat {item.seatNumber} Now ➔
+                </button>
               </div>
             ))}
           </div>
@@ -860,7 +1116,7 @@ export default function App() {
           </div>
 
           <div className="bus-list">
-            {dbBuses.map(bus => {
+            {activeFleet.map(bus => {
               const busKey = bus._id || bus.id
               return (
                 <div key={busKey} className="booking-card">
@@ -1238,6 +1494,120 @@ export default function App() {
                 <p>Please report to the boarding landmark 15 minutes before scheduled departure.</p>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESALE MODAL: SELLER LISTING */}
+      {resellingBooking && (
+        <div className="modal-backdrop no-print">
+          <div className="modal-box" style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <h3>⚡ Quick-Sale Resale Listing</h3>
+              <button type="button" className="close-btn" onClick={() => setResellingBooking(null)}>✕</button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1rem' }}>
+              Select the seats from booking <strong>{resellingBooking.pnr}</strong> you wish to list on the public marketplace.
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              {(resellingBooking.passengers || []).map(p => (
+                <button
+                  key={p.seatNumber}
+                  type="button"
+                  className={`pill-btn ${seatsToResell.includes(p.seatNumber) ? 'active' : ''}`}
+                  onClick={() => toggleSeatToResell(p.seatNumber)}
+                >
+                  Seat {p.seatNumber} ({p.name})
+                </button>
+              ))}
+            </div>
+
+            <div className="form-group">
+              <label>Markup / Discount Adjust (₹)</label>
+              <input 
+                type="number" 
+                value={resaleMarkup} 
+                onChange={(e) => setResaleMarkup(Number(e.target.value))} 
+                placeholder="0 for original price"
+              />
+            </div>
+
+            <button 
+              type="button" 
+              className="confirm-btn" 
+              style={{ width: '100%', marginTop: '0.8rem' }}
+              disabled={seatsToResell.length === 0 || isSubmittingResale}
+              onClick={confirmResaleListing}
+            >
+              {isSubmittingResale ? 'Publishing...' : `Publish ${seatsToResell.length} Seat(s) to Market ➔`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* RESALE MODAL: BUYER PURCHASE */}
+      {selectedResaleItem && (
+        <div className="modal-backdrop no-print">
+          <div className="modal-box" style={{ maxWidth: '420px' }}>
+            <div className="modal-header">
+              <h3>⚡ Instant Resale Purchase</h3>
+              <button type="button" className="close-btn" onClick={() => setSelectedResaleItem(null)}>✕</button>
+            </div>
+            <div style={{ background: '#f8fafc', padding: '0.8rem', borderRadius: '8px', marginBottom: '1rem' }}>
+              <p><strong>Bus:</strong> {selectedResaleItem.busName}</p>
+              <p><strong>Seat:</strong> {selectedResaleItem.seatNumber} | <strong>Price:</strong> ₹{selectedResaleItem.resalePrice}</p>
+              <p style={{ fontSize: '0.85rem', color: '#64748b' }}>📍 {selectedResaleItem.boarding} ➔ {selectedResaleItem.dropping}</p>
+            </div>
+
+            <form onSubmit={handleResalePurchaseSubmit}>
+              <div className="form-group">
+                <label>Passenger Full Name</label>
+                <input 
+                  type="text" 
+                  required 
+                  value={buyerDetails.name} 
+                  onChange={(e) => setBuyerDetails({ ...buyerDetails, name: e.target.value })} 
+                />
+              </div>
+              <div className="form-row">
+                <div className="form-group flex-1">
+                  <label>Age</label>
+                  <input 
+                    type="number" 
+                    required 
+                    min="1" 
+                    max="100" 
+                    value={buyerDetails.age} 
+                    onChange={(e) => setBuyerDetails({ ...buyerDetails, age: e.target.value })} 
+                  />
+                </div>
+                <div className="form-group flex-1">
+                  <label>Gender</label>
+                  <select 
+                    value={buyerDetails.gender} 
+                    onChange={(e) => setBuyerDetails({ ...buyerDetails, gender: e.target.value })}
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Mobile Number (For Ticket SMS)</label>
+                <input 
+                  type="tel" 
+                  required 
+                  pattern="[0-9]{10}" 
+                  value={buyerDetails.phone} 
+                  onChange={(e) => setBuyerDetails({ ...buyerDetails, phone: e.target.value })} 
+                />
+              </div>
+              <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }}>
+                Pay ₹{selectedResaleItem.resalePrice} & Grab Seat ➔
+              </button>
+            </form>
           </div>
         </div>
       )}

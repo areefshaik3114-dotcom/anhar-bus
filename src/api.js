@@ -1,117 +1,181 @@
-const API_BASE = 'https://anhar-bus.onrender.com'
+const API_BASE = 'https://anhar-bus.onrender.com';
 
 export const api = {
-  // 1. Fetch all bookings
+  // 1. Bookings Management
   getBookings: async () => {
-    const res = await fetch(`${API_BASE}/api/bookings`)
-    const data = await res.json()
-    return data.bookings || []
+    try {
+      const res = await fetch(`${API_BASE}/api/bookings`);
+      const data = await res.json();
+      return data.bookings || [];
+    } catch (err) {
+      console.error('API Error (getBookings):', err);
+      return [];
+    }
   },
 
-  // 2. Create primary booking
   createBooking: async (bookingData) => {
-    const res = await fetch(`${API_BASE}/api/bookings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bookingData)
-    })
-    return res.json()
+    try {
+      const res = await fetch(`${API_BASE}/api/bookings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bookingData)
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (createBooking):', err);
+      return { success: false, error: err.message };
+    }
   },
 
-  // 3. Fetch resale marketplace listings
-  getResaleListings: async () => {
-    const res = await fetch(`${API_BASE}/api/resale`)
-    const data = await res.json()
-    return data.listings || []
-  },
-
-  // 4. Publish resale listings
-  publishResale: async (listings, updatedBookings) => {
-    const res = await fetch(`${API_BASE}/api/resale`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ listings, updatedBookings })
-    })
-    return res.json()
-  },
-
-  // 5. Purchase resale seat
-  buyResale: async (resaleId, buyerBooking) => {
-    const res = await fetch(`${API_BASE}/api/resale/buy`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resaleId, buyerBooking })
-    })
-    return res.json()
-  },
-
-  // 6. Cancel booking with redBus tiered refund & wallet credit
+  // 2. Cancellation with redBus Tiered Refund & Wallet Credit
   cancelBooking: async (pnr) => {
-    const res = await fetch(`${API_BASE}/api/bookings/cancel`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pnr })
-    })
-    return res.json()
+    try {
+      const res = await fetch(`${API_BASE}/api/bookings/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pnr })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (cancelBooking):', err);
+      return { success: false, message: err.message };
+    }
   },
 
-  // 7. Dynamic Bus Search from MongoDB Atlas
+  // 3. Resale Marketplace Engine
+  getResaleListings: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/resale`);
+      const data = await res.json();
+      return data.listings || [];
+    } catch (err) {
+      console.error('API Error (getResaleListings):', err);
+      return [];
+    }
+  },
+
+  publishResale: async (listings, updatedBookings) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/resale`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listings, updatedBookings })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (publishResale):', err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  buyResale: async (resaleId, buyerBooking) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/resale/buy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resaleId, buyerBooking })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (buyResale):', err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  // 4. Dynamic Fleet Search & Operator Routes
   searchBuses: async (source, destination) => {
-    const query = new URLSearchParams()
-    if (source) query.append('source', source)
-    if (destination) query.append('destination', destination)
-    const res = await fetch(`${API_BASE}/api/buses/search?${query.toString()}`)
-    const data = await res.json()
-    return data.buses || []
+    try {
+      const query = new URLSearchParams();
+      if (source) query.append('source', source);
+      if (destination) query.append('destination', destination);
+      const res = await fetch(`${API_BASE}/api/buses/search?${query.toString()}`);
+      const data = await res.json();
+      return data.buses || [];
+    } catch (err) {
+      console.error('API Error (searchBuses):', err);
+      return [];
+    }
   },
 
-  // 8. Operator: Add new bus schedule
   createOperatorBus: async (busData) => {
-    const res = await fetch(`${API_BASE}/api/operator/buses`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(busData)
-    })
-    return res.json()
+    try {
+      const res = await fetch(`${API_BASE}/api/operator/buses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(busData)
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (createOperatorBus):', err);
+      return { success: false, error: err.message };
+    }
   },
 
-  // 9. Operator: Fetch live passenger manifest chart
   getTripManifest: async (busId, date) => {
-    const res = await fetch(`${API_BASE}/api/operator/manifest/${busId}/${date}`)
-    return res.json()
+    try {
+      const res = await fetch(`${API_BASE}/api/operator/manifest/${busId}/${date}`);
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (getTripManifest):', err);
+      return { success: false, manifest: [] };
+    }
   },
 
-  // 10. MongoDB Atlas User Wallet Endpoints
+  // 5. In-App User Wallet (MongoDB Atlas Sync)
   getWallet: async (phone) => {
-    const res = await fetch(`${API_BASE}/api/wallet/${phone}`)
-    return res.json()
+    try {
+      const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+      const res = await fetch(`${API_BASE}/api/wallet/${cleanPhone}`);
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (getWallet):', err);
+      return { success: false, balance: 0 };
+    }
   },
 
   updateWallet: async (phone, amount) => {
-    const res = await fetch(`${API_BASE}/api/wallet/update`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, amount })
-    })
-    return res.json()
+    try {
+      const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+      const res = await fetch(`${API_BASE}/api/wallet/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone, amount })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (updateWallet):', err);
+      return { success: false, balance: 0 };
+    }
   },
 
-  // 11. Passenger OTP Verification Endpoints
+  // 6. Fast2SMS OTP Authentication
   sendOtp: async (phone) => {
-    const res = await fetch(`${API_BASE}/api/auth/send-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone })
-    })
-    return res.json()
+    try {
+      const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+      const res = await fetch(`${API_BASE}/api/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (sendOtp):', err);
+      return { success: false, message: err.message };
+    }
   },
 
   verifyOtp: async (payload) => {
-    const res = await fetch(`${API_BASE}/api/auth/verify-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    return res.json()
+    try {
+      const cleanPhone = String(payload.phone).replace(/\D/g, '').slice(-10);
+      const res = await fetch(`${API_BASE}/api/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, phone: cleanPhone })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (verifyOtp):', err);
+      return { success: false, message: err.message };
+    }
   }
-}
+};

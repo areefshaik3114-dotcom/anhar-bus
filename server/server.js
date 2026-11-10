@@ -10,10 +10,8 @@ const Bus = require('./models/Bus');
 
 const app = express();
 
-// In-memory OTP cache (phone -> { otp, expiresAt })
 const otpStore = new Map();
 
-// Allowed Origins (Production Vercel + Local Development)
 const allowedOrigins = [
   'https://anhar-bus.vercel.app',
   'http://localhost:5173',
@@ -39,15 +37,7 @@ app.use(
 
 app.use(express.json());
 
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log(' Connected to MongoDB Atlas successfully!');
-    startResaleCleanupWorker();
-  })
-  .catch((err) => console.error(' MongoDB Connection Error:', err.message));
-
-// Reusable Fast2SMS Quick Route Dispatch Helper
+// Reusable Fast2SMS Quick Route Helper
 const sendQuickSms = async (phone, message) => {
   const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
   if (!process.env.FAST2SMS_API_KEY || cleanPhone.length !== 10) {
@@ -71,74 +61,14 @@ const sendQuickSms = async (phone, message) => {
       })
     });
     const result = await smsResponse.json();
-    console.log(`[Transactional SMS Result to +91 ${cleanPhone}]:`, result);
     return result.return;
   } catch (err) {
-    console.error(`[Transactional SMS Error to +91 ${cleanPhone}]:`, err.message);
+    console.error('[Transactional SMS Error]:', err.message);
     return false;
   }
 };
 
-// --- BACKGROUND WORKER: EXPIRED RESALE CLEANUP & SEAT RESTORATION ---
-const cleanupExpiredResaleListings = async () => {
-  try {
-    const now = Date.now();
-    const expiredListings = await ResaleListing.find({
-      status: 'AVAILABLE',
-      cutoffTimestamp: { $lte: now }
-    });
-
-    if (expiredListings.length === 0) return;
-
-    console.log(`[Resale Cleanup] Found ${expiredListings.length} expired resale listing(s). Processing reversion...`);
-
-    for (const item of expiredListings) {
-      item.status = 'EXPIRED';
-      await item.save();
-
-      if (item.sellerPnr) {
-        const originalBooking = await Booking.findOne({ pnr: item.sellerPnr });
-
-        if (originalBooking) {
-          const seatAlreadyRestored = (originalBooking.passengers || []).some(
-            p => Number(p.seatNumber) === Number(item.seatNumber)
-          );
-
-          if (!seatAlreadyRestored) {
-            originalBooking.passengers.push({
-              seatNumber: Number(item.seatNumber),
-              name: item.sellerName || 'Passenger',
-              age: 25,
-              gender: 'Male'
-            });
-
-            originalBooking.totalPaid = originalBooking.passengers.length * (originalBooking.unitPrice || item.originalPrice);
-            originalBooking.status = 'CONFIRMED';
-            await originalBooking.save();
-            console.log(`[Seat Restored] Seat ${item.seatNumber} returned to PNR ${item.sellerPnr}`);
-          }
-        }
-      }
-
-      const sellerPhone = item.sellerPhone || (item.contact && item.contact.phone);
-      if (sellerPhone) {
-        const cleanSellerPhone = String(sellerPhone).replace(/\D/g, '').slice(-10);
-        const revertMsg = `ANHAR BUS Update: Resale window closed for Seat ${item.seatNumber} (${item.busName}). Your seat has been restored to your booking. Happy Journey!`;
-        await sendQuickSms(cleanSellerPhone, revertMsg);
-      }
-    }
-  } catch (err) {
-    console.error('[Resale Cleanup Error]:', err.message);
-  }
-};
-
-const startResaleCleanupWorker = () => {
-  console.log(' Resale Auto-Cleanup Worker running (Interval: 60s)');
-  cleanupExpiredResaleListings();
-  setInterval(cleanupExpiredResaleListings, 60 * 1000);
-};
-
-// Dynamic Seat Layout Generator
+// Layout Generator Helper for Buses
 const buildDynamicSeats = (layoutType, p) => {
   const seats = [];
   const base = Number(p.basePrice || 600);
@@ -222,23 +152,12 @@ const buildDynamicSeats = (layoutType, p) => {
   return seats;
 };
 
-// Health Check
-app.get('/', (req, res) => res.send('ANHAR BUS Backend Server is live!'));
-
-// --- DYNAMIC FLEET & OPERATOR ENDPOINTS ---
-
-// 1. Search Buses Dynamically
-app.get('/api/buses/search', async (req, res) => {
+// Automatic Seeder so buses are never missing
+const seedDefaultFleetIfEmpty = async () => {
   try {
-    const { source, destination } = req.query;
-    const filter = { isActive: true };
-    if (source) filter.source = new RegExp(`^${source}$`, 'i');
-    if (destination) filter.destination = new RegExp(`^${destination}$`, 'i');
-
-    let buses = await Bus.find(filter).sort({ departureHour: 1 });
-
-    // Seed default starter fleet if MongoDB collection is empty
-    if (buses.length === 0 && !source && !destination) {
+    const count = await Bus.countDocuments();
+    if (count === 0) {
+      console.log('Seeding initial ANHAR BUS fleet into MongoDB Atlas...');
       const defaultBuses = [
         {
           name: 'ANHAR Multi-Axle Volvo Semi-Sleeper',
@@ -289,9 +208,119 @@ app.get('/api/buses/search', async (req, res) => {
             { name: 'Gachibowli (ORR Junction)', timeOffset: '+7h 45m' },
             { name: 'Ameerpet (Near Big Bazaar)', timeOffset: '+8h 30m' }
           ]
+        },
+        {
+          name: 'ANHAR Guntakal Superfast Express',
+          busNumber: 'AP 21 Z 1042',
+          operatorPhone: '8977733885',
+          source: 'Bengaluru',
+          destination: 'Guntakal',
+          departure: '07:30',
+          departureHour: 7.5,
+          arrival: '14:30',
+          duration: '7h 00m',
+          layoutType: 'PUSHBACK_ONLY',
+          category: 'Pushback Seater',
+          type: '2+2 Pushback AC',
+          price: 520,
+          totalSeats: 24,
+          seats: buildDynamicSeats('PUSHBACK_ONLY', { basePrice: 520, lowerLeftPrice: 520, lowerRightPrice: 550, backPrice: 480 }),
+          boardingPoints: [
+            { name: 'Majestic (Bus Stand Platform 4)', timeOffset: '+0h 00m' }
+          ],
+          droppingPoints: [
+            { name: 'Guntakal Railway Station Circle', timeOffset: '+7h 00m' }
+          ]
         }
       ];
-      buses = await Bus.insertMany(defaultBuses);
+      await Bus.insertMany(defaultBuses);
+      console.log('Seeded default fleet successfully!');
+    }
+  } catch (err) {
+    console.error('Seeding fleet error:', err.message);
+  }
+};
+
+// Resale Auto-Cleanup Worker
+const cleanupExpiredResaleListings = async () => {
+  try {
+    const now = Date.now();
+    const expiredListings = await ResaleListing.find({
+      status: 'AVAILABLE',
+      cutoffTimestamp: { $lte: now }
+    });
+
+    if (expiredListings.length === 0) return;
+
+    for (const item of expiredListings) {
+      item.status = 'EXPIRED';
+      await item.save();
+
+      if (item.sellerPnr) {
+        const originalBooking = await Booking.findOne({ pnr: item.sellerPnr });
+        if (originalBooking) {
+          const seatAlreadyRestored = (originalBooking.passengers || []).some(
+            p => Number(p.seatNumber) === Number(item.seatNumber)
+          );
+
+          if (!seatAlreadyRestored) {
+            originalBooking.passengers.push({
+              seatNumber: Number(item.seatNumber),
+              name: item.sellerName || 'Passenger',
+              age: 25,
+              gender: 'Male'
+            });
+            originalBooking.totalPaid = originalBooking.passengers.length * (originalBooking.unitPrice || item.originalPrice);
+            originalBooking.status = 'CONFIRMED';
+            await originalBooking.save();
+          }
+        }
+      }
+
+      const sellerPhone = item.sellerPhone || (item.contact && item.contact.phone);
+      if (sellerPhone) {
+        const cleanSellerPhone = String(sellerPhone).replace(/\D/g, '').slice(-10);
+        const revertMsg = `ANHAR BUS Update: Resale window closed for Seat ${item.seatNumber} (${item.busName}). Seat restored to your booking.`;
+        await sendQuickSms(cleanSellerPhone, revertMsg);
+      }
+    }
+  } catch (err) {
+    console.error('[Resale Cleanup Error]:', err.message);
+  }
+};
+
+const startResaleCleanupWorker = () => {
+  cleanupExpiredResaleListings();
+  setInterval(cleanupExpiredResaleListings, 60 * 1000);
+};
+
+// Connect to MongoDB Atlas
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(async () => {
+    console.log(' Connected to MongoDB Atlas successfully!');
+    await seedDefaultFleetIfEmpty();
+    startResaleCleanupWorker();
+  })
+  .catch((err) => console.error(' MongoDB Connection Error:', err.message));
+
+app.get('/', (req, res) => res.send('ANHAR BUS Backend Server is live!'));
+
+// --- DYNAMIC FLEET & OPERATOR ENDPOINTS ---
+
+// 1. Search Buses Dynamically
+app.get('/api/buses/search', async (req, res) => {
+  try {
+    const { source, destination } = req.query;
+    const filter = { isActive: true };
+    if (source) filter.source = new RegExp(`^${source}$`, 'i');
+    if (destination) filter.destination = new RegExp(`^${destination}$`, 'i');
+
+    let buses = await Bus.find(filter).sort({ departureHour: 1 });
+
+    // Fallback: If no bus matches the exact search, return all active buses so screen is never blank
+    if (buses.length === 0) {
+      buses = await Bus.find({ isActive: true }).sort({ departureHour: 1 });
     }
 
     res.json({ success: true, buses });
@@ -357,7 +386,7 @@ app.get('/api/operator/manifest/:busId/:date', async (req, res) => {
   }
 });
 
-// --- PASSENGER BOOKING & CANCELLATION ENDPOINTS ---
+// --- BOOKING & CANCELLATION ENDPOINTS ---
 
 // 4. Fetch all bookings
 app.get('/api/bookings', async (req, res) => {
@@ -639,7 +668,6 @@ app.post('/api/auth/verify-otp', async (req, res) => {
   }
 });
 
-// Bind and listen on all network interfaces
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`ANHAR BUS Server live on port ${PORT}`);

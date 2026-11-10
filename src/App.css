@@ -6,22 +6,24 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background-color: #f1f5f9;
+  background-color: #0f172a;
   color: #1e293b;
 }
 
 .anhar-app {
   min-height: 100vh;
+  background-color: #0f172a;
 }
 
 /* NAVBAR */
 .navbar {
-  background: #0f172a;
+  background: #0b1120;
   color: #ffffff;
-  padding: 0.8rem 1.5rem;
+  padding: 0.9rem 1.5rem;
   position: sticky;
   top: 0;
   z-index: 100;
+  border-bottom: 1px solid #1e293b;
 }
 
 .nav-container {
@@ -41,6 +43,7 @@ body {
   font-size: 1.35rem;
   font-weight: 800;
   letter-spacing: 0.5px;
+  color: #ffffff;
 }
 
 .nav-links {
@@ -74,6 +77,7 @@ body {
   border-radius: 10px;
   font-size: 0.75rem;
   margin-left: 0.3rem;
+  font-weight: bold;
 }
 
 .wallet-chip {
@@ -83,6 +87,7 @@ body {
   border-radius: 20px;
   font-size: 0.85rem;
   cursor: pointer;
+  color: #f8fafc;
   transition: background 0.2s ease;
 }
 
@@ -107,6 +112,11 @@ body {
   border-radius: 6px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.login-nav-btn:hover {
+  background: #0369a1;
 }
 
 .user-profile-badge {
@@ -115,6 +125,7 @@ body {
   gap: 0.4rem;
   font-size: 0.85rem;
   background: #1e293b;
+  color: #f8fafc;
   padding: 0.35rem 0.7rem;
   border-radius: 6px;
 }
@@ -130,13 +141,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 0.75rem;
 }
 
 /* SEARCH HERO */
 .search-hero {
-  background: linear-gradient(135deg, #0f172a, #1e293b);
-  padding: 2rem 1.5rem 3.5rem 1.5rem;
-  color: #fff;
+  background: #0f172a;
+  padding: 2rem 1.5rem 2.5rem 1.5rem;
 }
 
 .search-card {
@@ -146,12 +157,13 @@ body {
   color: #1e293b;
   padding: 1.5rem;
   border-radius: 12px;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
 }
 
 .search-card h2 {
   font-size: 1.25rem;
   margin-bottom: 1rem;
+  font-weight: 800;
 }
 
 .search-grid {
@@ -169,29 +181,33 @@ body {
 
 .input-group label {
   display: block;
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.75rem;
+  font-weight: 800;
   color: #64748b;
   margin-bottom: 0.3rem;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .input-group select, .input-group input {
   width: 100%;
   padding: 0.65rem 0.8rem;
-  border: 1px solid #cbd5e1;
+  border: 1.5px solid #cbd5e1;
   border-radius: 6px;
   font-size: 0.95rem;
   background: #fff;
+  color: #1e293b;
 }
 
 .swap-city-btn {
   background: #f1f5f9;
-  border: 1px solid #cbd5e1;
+  border: 1.5px solid #cbd5e1;
   padding: 0.65rem 0.85rem;
   border-radius: 6px;
   cursor: pointer;
   font-size: 1rem;
+  font-weight: bold;
+  color: #334155;
 }
 
 .search-btn {
@@ -210,10 +226,10 @@ body {
   background: #b91c1c;
 }
 
-/* RESULTS & CARDS */
+/* RESULTS CONTAINER */
 .results-container {
   max-width: 1050px;
-  margin: -1.5rem auto 3rem auto;
+  margin: 0 auto 3.5rem auto;
   padding: 0 1rem;
 }
 
@@ -221,11 +237,17 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #fff;
-  padding: 1rem 1.2rem;
-  border-radius: 8px;
+  background: #ffffff;
+  padding: 1.1rem 1.3rem;
+  border-radius: 10px;
   border: 1px solid #e2e8f0;
   margin-bottom: 1rem;
+}
+
+.results-header-row h3 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
 }
 
 .route-sub-count {
@@ -240,18 +262,27 @@ body {
   gap: 0.5rem;
 }
 
-.sort-control-box select {
-  padding: 0.4rem 0.6rem;
-  border-radius: 6px;
-  border: 1px solid #cbd5e1;
+.sort-control-box label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
 }
 
-/* FILTER STRIP */
+.sort-control-box select {
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  border: 1.5px solid #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* FILTER BAR */
 .filters-strip {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 1rem;
+  border-radius: 10px;
+  padding: 1rem 1.2rem;
   margin-bottom: 1.2rem;
   display: flex;
   flex-direction: column;
@@ -267,8 +298,8 @@ body {
 
 .filter-title {
   font-size: 0.82rem;
-  font-weight: 700;
-  color: #475569;
+  font-weight: 800;
+  color: #334155;
   min-width: 110px;
 }
 
@@ -280,8 +311,8 @@ body {
 
 .pill-btn {
   background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  padding: 0.35rem 0.75rem;
+  border: 1.5px solid #cbd5e1;
+  padding: 0.4rem 0.85rem;
   border-radius: 20px;
   font-size: 0.82rem;
   font-weight: 600;
@@ -296,6 +327,7 @@ body {
   border-color: #0284c7;
 }
 
+/* BUS & BOOKING CARDS */
 .bus-list {
   display: flex;
   flex-direction: column;
@@ -306,8 +338,8 @@ body {
   background: #ffffff;
   border-radius: 12px;
   border: 1px solid #e2e8f0;
-  padding: 1.2rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+  padding: 1.3rem;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.06);
 }
 
 .bus-main-info, .booking-top {
@@ -317,22 +349,28 @@ body {
   margin-bottom: 0.8rem;
 }
 
+.bus-main-info h4, .booking-top h4 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
 .bus-badge {
   background: #e0f2fe;
   color: #0369a1;
   font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.2rem 0.5rem;
+  font-weight: 800;
+  padding: 0.2rem 0.55rem;
   border-radius: 4px;
   display: inline-block;
-  margin-top: 0.3rem;
+  margin-top: 0.35rem;
 }
 
 .rating-tag {
   background: #15803d;
   color: #fff;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
   font-size: 0.85rem;
   font-weight: bold;
 }
@@ -342,46 +380,71 @@ body {
   grid-template-columns: 1fr 1fr 1fr 1fr;
   align-items: center;
   gap: 1rem;
-  padding: 0.8rem 0;
+  padding: 0.9rem 0;
   border-top: 1px solid #f1f5f9;
   border-bottom: 1px solid #f1f5f9;
+}
+
+.bus-timings strong {
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.bus-timings p {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-top: 0.2rem;
 }
 
 .duration {
   text-align: center;
   font-size: 0.82rem;
   color: #64748b;
+  font-weight: 600;
 }
 
 .route-line {
   height: 2px;
   background: #cbd5e1;
   position: relative;
-  margin: 0.3rem 0;
+  margin: 0.35rem 0;
 }
 
 .bus-price {
   text-align: right;
 }
 
+.bus-price h3 {
+  font-size: 1.35rem;
+  color: #0f172a;
+  font-weight: 800;
+}
+
 .fare-label {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: #64748b;
-  display: block;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .bus-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 0.8rem;
+  margin-top: 0.9rem;
+}
+
+.seats-count {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
 }
 
 .select-seat-btn, .confirm-btn {
   background: #0284c7;
   color: #fff;
   border: none;
-  padding: 0.55rem 1.2rem;
+  padding: 0.55rem 1.25rem;
   border-radius: 6px;
   font-weight: 700;
   cursor: pointer;
@@ -403,7 +466,13 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.9rem;
+}
+
+.seat-map-header h5 {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0f172a;
 }
 
 .seat-legend {
@@ -411,6 +480,8 @@ body {
   gap: 0.8rem;
   font-size: 0.78rem;
   flex-wrap: wrap;
+  font-weight: 600;
+  color: #475569;
 }
 
 .legend-item {
@@ -433,18 +504,20 @@ body {
 
 .deck-switcher-tabs {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.6rem;
   margin-bottom: 1rem;
 }
 
 .deck-tab-btn {
   flex: 1;
-  padding: 0.65rem;
+  padding: 0.7rem;
   border-radius: 8px;
-  border: 1.5px solid #cbd5e1;
+  border: 2px solid #cbd5e1;
   background: #f8fafc;
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 0.88rem;
   cursor: pointer;
+  color: #334155;
   transition: all 0.15s ease;
 }
 
@@ -452,6 +525,7 @@ body {
   background: #0284c7;
   color: #fff;
   border-color: #0284c7;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
 }
 
 .cabin-container {
@@ -466,44 +540,45 @@ body {
   display: flex;
   justify-content: flex-end;
   background: #e2e8f0;
-  padding: 0.45rem 0.8rem;
+  padding: 0.45rem 0.9rem;
   border-radius: 6px;
   font-size: 0.82rem;
   font-weight: 800;
-  color: #334155;
+  color: #1e293b;
   margin-bottom: 1rem;
+  letter-spacing: 0.5px;
 }
 
 .deck-cabin-grid {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1.2rem;
 }
 
 .cabin-column {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.65rem;
 }
 
 .gangway-aisle {
-  width: 32px;
+  width: 36px;
   background: #e2e8f0;
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 800;
   color: #64748b;
   writing-mode: vertical-rl;
-  letter-spacing: 3px;
+  letter-spacing: 4px;
   user-select: none;
 }
 
 .seat-unit {
-  padding: 0.5rem 0.3rem;
+  padding: 0.5rem 0.4rem;
   border-radius: 6px;
   border: 1.5px solid #94a3b8;
   background: #ffffff;
@@ -513,13 +588,13 @@ body {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-height: 52px;
-  font-weight: 600;
+  min-height: 54px;
+  font-weight: 700;
   transition: all 0.15s ease;
 }
 
 .seat-unit.sleeper-berth {
-  min-height: 72px;
+  min-height: 74px;
   border-style: dashed;
   background: #fefce8;
   border-color: #ca8a04;
@@ -570,14 +645,14 @@ body {
 
 .points-box {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
+  border: 1.5px solid #e2e8f0;
   border-radius: 8px;
-  padding: 0.8rem;
+  padding: 0.85rem;
 }
 
 .points-label {
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 800;
   color: #334155;
   margin-bottom: 0.5rem;
   display: block;
@@ -587,7 +662,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.5rem;
+  padding: 0.55rem;
   border-radius: 6px;
   border: 1px solid #f1f5f9;
   margin-bottom: 0.4rem;
@@ -611,7 +686,7 @@ body {
   justify-content: space-between;
   align-items: center;
   background: #f1f5f9;
-  padding: 0.8rem 1rem;
+  padding: 0.9rem 1.1rem;
   border-radius: 8px;
   margin-top: 1.2rem;
 }
@@ -717,7 +792,7 @@ body {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.65);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -736,7 +811,7 @@ body {
 }
 
 .modal-box.large-modal {
-  max-width: 700px;
+  max-width: 720px;
 }
 
 .modal-header {
@@ -749,12 +824,12 @@ body {
 .close-btn {
   background: transparent;
   border: none;
-  font-size: 1.2rem;
+  font-size: 1.25rem;
   cursor: pointer;
 }
 
 .form-group {
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.85rem;
 }
 
 .form-group label {
@@ -768,9 +843,10 @@ body {
 .form-group input, .form-group select {
   width: 100%;
   padding: 0.6rem 0.8rem;
-  border: 1px solid #cbd5e1;
+  border: 1.5px solid #cbd5e1;
   border-radius: 6px;
   font-size: 0.95rem;
+  color: #1e293b;
 }
 
 .form-row {
@@ -791,12 +867,14 @@ body {
 
 .ticket-passenger-table th, .ticket-passenger-table td {
   border: 1px solid #cbd5e1;
-  padding: 0.5rem;
+  padding: 0.55rem;
   text-align: left;
 }
 
 .ticket-passenger-table th {
   background: #f1f5f9;
+  font-weight: 700;
+  color: #334155;
 }
 
 .pnr-tag {
@@ -815,6 +893,7 @@ body {
 
 .status-cancelled {
   color: #dc2626 !important;
+  font-weight: bold;
 }
 
 /* PRINT STYLES */

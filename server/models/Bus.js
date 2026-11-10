@@ -26,7 +26,7 @@ const BusSchema = new mongoose.Schema({
   },
   category: { type: String, default: 'Mixed Seater & Sleeper' },
   type: { type: String, default: '2+1 Executive AC Sleeper' },
-  price: { type: Number, required: true }, // Base minimum display fare
+  price: { type: Number, required: true }, // Starting display fare
   totalSeats: { type: Number, default: 30 },
   seats: [SeatDetailSchema],
   boardingPoints: [
