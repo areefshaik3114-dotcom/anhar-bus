@@ -11,6 +11,7 @@ const Bus = require('./models/Bus');
 const app = express();
 
 const otpStore = new Map();
+const FIXED_OPERATOR_ADMIN_PHONE = '8977733885';
 
 const allowedOrigins = [
   'https://anhar-bus.vercel.app',
@@ -79,7 +80,7 @@ const buildDynamicSeats = (layoutType, p) => {
   const backDiscounted = Number(p.backPrice || base - 50);
 
   if (layoutType === 'MIXED_SEATER_SLEEPER') {
-    // LOWER DECK: Pushback Seaters 1 to 15 (Left Single, Right Double, Back Row)
+    // LOWER DECK: Pushback Seaters 1 to 15
     for (let i = 1; i <= 15; i++) {
       const isLeft = [1, 4, 7, 10].includes(i);
       const isBack = [13, 14, 15].includes(i);
@@ -92,7 +93,7 @@ const buildDynamicSeats = (layoutType, p) => {
         price: isBack ? backDiscounted : (isLeft ? leftSeater : rightSeater)
       });
     }
-    // UPPER DECK: Sleeper Berths 16 to 30 (Left Single, Right Double, Back Row)
+    // UPPER DECK: Sleeper Berths 16 to 30
     for (let i = 16; i <= 30; i++) {
       const isLeft = [16, 19, 22, 25].includes(i);
       const isBack = [28, 29, 30].includes(i);
@@ -133,7 +134,7 @@ const buildDynamicSeats = (layoutType, p) => {
       });
     }
   } else {
-    // SINGLE DECK: PUSHBACK_ONLY or SEATER_ONLY (1 to 24 seats)
+    // SINGLE DECK: PUSHBACK_ONLY or SEATER_ONLY
     const seatType = layoutType === 'PUSHBACK_ONLY' ? 'PUSHBACK' : 'SEATER';
     for (let i = 1; i <= 24; i++) {
       const isLeft = [1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21].includes(i);
@@ -321,22 +322,116 @@ mongoose
 app.get('/', (req, res) => res.send('ANHAR BUS Backend Server is live!'));
 
 // ==========================================
-// --- FLEET & OPERATOR ENDPOINTS ---
+// --- OPERATOR STRICT ADMIN AUTH SYSTEM ---
 // ==========================================
 
-// 1. PASSENGER SEARCH: Past buses disappear automatically
+// 1. Send OTP strictly to your fixed admin phone (8977733885)
+app.post('/api/operator/send-setup-otp', async (req, res) => {
+  try {
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    otpStore.set(FIXED_OPERATOR_ADMIN_PHONE, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
+
+    const msg = `ANHAR BUS Admin Alert: Operator Registration OTP is ${otp}. Valid for 5 minutes.`;
+    const sent = await sendQuickSms(FIXED_OPERATOR_ADMIN_PHONE, msg);
+
+    if (sent) {
+      return res.json({ success: true, message: `OTP sent to Admin (+91 ${FIXED_OPERATOR_ADMIN_PHONE})` });
+    }
+    res.json({ success: true, message: 'OTP Generated (Dev Mode)', devOtp: otp });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 2. First-time registration: Verify Admin OTP and save Operator Name & Password
+app.post('/api/operator/register-with-otp', async (req, res) => {
+  try {
+    const { name, password, otp } = req.body;
+
+    if (!name || !password || !otp) {
+      return res.status(400).json({ success: false, message: 'Name, Password, and Admin OTP are required.' });
+    }
+
+    const record = otpStore.get(FIXED_OPERATOR_ADMIN_PHONE);
+    if (!record || record.otp !== String(otp).trim() || Date.now() > record.expiresAt) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP from admin.' });
+    }
+
+    otpStore.delete(FIXED_OPERATOR_ADMIN_PHONE);
+
+    // Check if operator name already exists
+    const existing = await User.findOne({ name: new RegExp(`^${name.trim()}$`, 'i'), isOperator: true });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'An operator with this name already exists. Choose a different name.' });
+    }
+
+    // Save operator record
+    const newOperator = await User.create({
+      phone: FIXED_OPERATOR_ADMIN_PHONE,
+      name: name.trim(),
+      operatorPassword: String(password).trim(),
+      isOperator: true,
+      walletBalance: 0
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Operator registered successfully!', 
+      operator: { id: newOperator._id, name: newOperator.name } 
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 3. Daily login: Operator logs in using their Name and Password
+app.post('/api/operator/login', async (req, res) => {
+  try {
+    const { name, password } = req.body;
+
+    if (!name || !password) {
+      return res.status(400).json({ success: false, message: 'Please enter Name and Password.' });
+    }
+
+    const operator = await User.findOne({
+      name: new RegExp(`^${name.trim()}$`, 'i'),
+      isOperator: true
+    });
+
+    if (!operator) {
+      return res.status(404).json({ success: false, message: 'Operator not found. Please register first with Admin OTP.' });
+    }
+
+    if (operator.operatorPassword !== String(password).trim()) {
+      return res.status(401).json({ success: false, message: 'Incorrect Password. Please try again.' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Login successful!',
+      operator: { id: operator._id, name: operator.name, phone: operator.phone }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ==========================================
+// --- FLEET & OPERATOR BUS MANAGEMENT ---
+// ==========================================
+
+// 4. PASSENGER SEARCH: Past buses disappear automatically
 app.get('/api/buses/search', async (req, res) => {
   try {
     const { source, destination, date } = req.query;
     const now = new Date();
 
-    // Query active buses that have not departed yet
     const filter = {
       isActive: true,
       status: 'active',
       $or: [
         { departureDate: { $gte: now } },
-        { departureDate: { $exists: false } } // Compatibility fallback
+        { departureDate: { $exists: false } }
       ]
     };
 
@@ -356,7 +451,6 @@ app.get('/api/buses/search', async (req, res) => {
 
     let buses = await Bus.find(filter).sort({ departureDate: 1, departureHour: 1 });
 
-    // Fallback: If no bus matches the exact search, return all active upcoming buses
     if (buses.length === 0) {
       buses = await Bus.find({
         isActive: true,
@@ -374,7 +468,7 @@ app.get('/api/buses/search', async (req, res) => {
   }
 });
 
-// 2. OPERATOR FLEET LIST: Operator sees all buses, with flags showing if it's past or editable
+// 5. OPERATOR FLEET LIST: Operator sees all buses, with completed tags on past days
 app.get('/api/operator/my-buses', async (req, res) => {
   try {
     const { phone } = req.query;
@@ -389,7 +483,7 @@ app.get('/api/operator/my-buses', async (req, res) => {
       return {
         ...bus.toObject(),
         isPast,
-        canEdit: !isPast && bus.status === 'active' // Past days: View-only
+        canEdit: !isPast && bus.status === 'active'
       };
     });
 
@@ -399,7 +493,7 @@ app.get('/api/operator/my-buses', async (req, res) => {
   }
 });
 
-// 3. OPERATOR ADD NEW BUS
+// 6. OPERATOR ADD NEW BUS
 app.post('/api/operator/buses', async (req, res) => {
   try {
     const busData = { ...req.body };
@@ -418,13 +512,12 @@ app.post('/api/operator/buses', async (req, res) => {
     busData.status = 'active';
     busData.isActive = true;
 
-    // Build departureDate object if date and departure string are provided
     if (busData.date && busData.departure) {
       const depTime = busData.departure.trim();
       const timeFormatted = depTime.length === 5 ? depTime : '0' + depTime;
       busData.departureDate = new Date(`${busData.date}T${timeFormatted}:00.000Z`);
     } else if (!busData.departureDate) {
-      busData.departureDate = new Date(Date.now() + 24 * 60 * 60 * 1000); // Defaults to tomorrow
+      busData.departureDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
     }
 
     const newBus = await Bus.create(busData);
@@ -434,7 +527,7 @@ app.post('/api/operator/buses', async (req, res) => {
   }
 });
 
-// 4. OPERATOR EDIT BUS: Strict guard preventing changes if the trip is in the past
+// 7. OPERATOR EDIT BUS: Strict guard preventing changes if trip is in the past
 app.put('/api/buses/:id', async (req, res) => {
   try {
     const bus = await Bus.findById(req.params.id);
@@ -442,7 +535,6 @@ app.put('/api/buses/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Bus not found' });
     }
 
-    // Past date check
     if (bus.departureDate && new Date(bus.departureDate) < new Date()) {
       return res.status(400).json({
         success: false,
@@ -457,14 +549,13 @@ app.put('/api/buses/:id', async (req, res) => {
   }
 });
 
-// 5. OPERATOR REMOVE/DELETE BUS
+// 8. OPERATOR REMOVE/DELETE BUS
 app.delete('/api/buses/:id', async (req, res) => {
   try {
     const busId = req.params.id;
     const bus = await Bus.findById(busId);
     if (!bus) return res.status(404).json({ success: false, message: 'Bus not found' });
 
-    // Check if any passenger booked this bus
     const activeBookings = await Booking.find({
       busId: String(busId),
       status: { $in: ['CONFIRMED', 'confirmed'] }
@@ -472,7 +563,6 @@ app.delete('/api/buses/:id', async (req, res) => {
 
     const isFutureTrip = bus.departureDate && new Date(bus.departureDate) >= new Date();
 
-    // Prevent deletion only if there are active bookings for an upcoming trip
     if (activeBookings.length > 0 && isFutureTrip) {
       return res.status(400).json({
         success: false,
@@ -480,15 +570,14 @@ app.delete('/api/buses/:id', async (req, res) => {
       });
     }
 
-    // Soft delete to preserve historical integrity, or hard delete if past
-    await Bus.findByIdAndUpdate(busId, { status: 'deleted', isActive: false });
+    await Bus.findByIdAndDelete(busId);
     res.json({ success: true, message: 'Bus removed successfully.' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// 6. OPERATOR TRIP MANIFEST
+// 9. OPERATOR TRIP MANIFEST
 app.get('/api/operator/manifest/:busId/:date', async (req, res) => {
   try {
     const { busId, date } = req.params;
@@ -526,7 +615,7 @@ app.get('/api/operator/manifest/:busId/:date', async (req, res) => {
 // --- BOOKING & CANCELLATION ENDPOINTS ---
 // ==========================================
 
-// 7. Fetch all bookings
+// 10. Fetch all bookings
 app.get('/api/bookings', async (req, res) => {
   try {
     const bookings = await Booking.find().sort({ createdAt: -1 });
@@ -536,7 +625,7 @@ app.get('/api/bookings', async (req, res) => {
   }
 });
 
-// 8. Create new booking & dispatch SMS
+// 11. Create new booking & dispatch SMS
 app.post('/api/bookings', async (req, res) => {
   try {
     const newBooking = await Booking.create(req.body);
@@ -553,7 +642,7 @@ app.post('/api/bookings', async (req, res) => {
   }
 });
 
-// 9. Tiered redBus Cancellation & Wallet Refund Engine
+// 12. Tiered redBus Cancellation & Wallet Refund Engine
 app.post('/api/bookings/cancel', async (req, res) => {
   try {
     const { pnr } = req.body;

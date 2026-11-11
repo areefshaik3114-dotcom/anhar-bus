@@ -1,4 +1,7 @@
-const API_BASE = 'https://anhar-bus.onrender.com';
+// Automatically switches between Localhost and Render
+const API_BASE = (typeof window !== 'undefined' && window.location.hostname === 'localhost')
+  ? 'http://localhost:5000'
+  : 'https://anhar-bus.onrender.com';
 
 export const api = {
   // 1. Bookings Management
@@ -97,6 +100,17 @@ export const api = {
     }
   },
 
+  getOperatorBuses: async (phone) => {
+    try {
+      const cleanPhone = phone ? String(phone).replace(/\D/g, '').slice(-10) : '';
+      const res = await fetch(`${API_BASE}/api/operator/my-buses?phone=${cleanPhone}`);
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (getOperatorBuses):', err);
+      return { success: false, buses: [] };
+    }
+  },
+
   createOperatorBus: async (busData) => {
     try {
       const res = await fetch(`${API_BASE}/api/operator/buses`, {
@@ -111,6 +125,18 @@ export const api = {
     }
   },
 
+  deleteBus: async (busId) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/buses/${busId}`, {
+        method: 'DELETE'
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (deleteBus):', err);
+      return { success: false, message: err.message };
+    }
+  },
+
   getTripManifest: async (busId, date) => {
     try {
       const res = await fetch(`${API_BASE}/api/operator/manifest/${busId}/${date}`);
@@ -121,7 +147,43 @@ export const api = {
     }
   },
 
-  // 5. In-App User Wallet (MongoDB Atlas Sync)
+  // Fixed Admin Phone (8977733885) Operator Auth Endpoints
+  operatorSendSetupOtp: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/operator/send-setup-otp`, { method: 'POST' });
+      return await res.json();
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  },
+
+  operatorRegisterWithOtp: async (name, password, otp) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/operator/register-with-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, password, otp })
+      });
+      return await res.json();
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  },
+
+  operatorLogin: async (name, password) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/operator/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, password })
+      });
+      return await res.json();
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  },
+
+  // 5. In-App User Wallet
   getWallet: async (phone) => {
     try {
       const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
@@ -148,7 +210,7 @@ export const api = {
     }
   },
 
-  // 6. Fast2SMS OTP Authentication
+  // 6. Fast2SMS Passenger OTP Authentication
   sendOtp: async (phone) => {
     try {
       const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);

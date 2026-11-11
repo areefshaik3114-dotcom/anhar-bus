@@ -144,7 +144,7 @@ export default function App() {
   const [currentUserName, setCurrentUserName] = useState(() => localStorage.getItem('anhar_user_name') || '')
   const [currentUserEmail, setCurrentUserEmail] = useState(() => localStorage.getItem('anhar_user_email') || '')
 
-  // OTP Login Modal State
+  // Passenger OTP Login Modal State
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [loginStep, setLoginStep] = useState('DETAILS')
   const [loginForm, setLoginForm] = useState({ name: '', email: '', phone: '' })
@@ -155,10 +155,16 @@ export default function App() {
   // Wallet
   const [walletBalance, setWalletBalance] = useState(0)
 
-  // Operator Desk Protection
+  // Operator Authentication State (Strict Fixed Admin Phone)
   const [isOperatorAuthorized, setIsOperatorAuthorized] = useState(() => sessionStorage.getItem('anhar_operator_auth') === 'true')
-  const [operatorPinInput, setOperatorPinInput] = useState('')
   const [showPinModal, setShowPinModal] = useState(false)
+  const [operatorAuthMode, setOperatorAuthMode] = useState('LOGIN') // 'LOGIN' | 'FIRST_TIME_OTP'
+  const [opLoginName, setOpLoginName] = useState('')
+  const [opLoginPassword, setOpLoginPassword] = useState('')
+  const [opRegisterName, setOpRegisterName] = useState('')
+  const [opRegisterPassword, setOpRegisterPassword] = useState('')
+  const [opOtpInput, setOpOtpInput] = useState('')
+  const [isAuthLoading, setIsAuthLoading] = useState(false)
 
   // Fleet & Manifest States
   const [dbBuses, setDbBuses] = useState([])
@@ -237,18 +243,18 @@ export default function App() {
     }
   }
 
-  // Fetch operator fleet with view-only tags for past departures
+  // Fetch operator fleet
   const fetchOperatorFleet = async () => {
     try {
       const operatorPhone = currentUser || '8977733885'
-      const res = await fetch(`https://anhar-bus.onrender.com/api/operator/my-buses?phone=${operatorPhone}`)
-      const data = await res.json()
+      const data = await api.getOperatorBuses(operatorPhone)
       if (data && data.success && Array.isArray(data.buses)) {
         setOperatorBuses(data.buses)
       } else {
         setOperatorBuses(dbBuses.length > 0 ? dbBuses : DEFAULT_STARTER_FLEET)
       }
     } catch (err) {
+      console.error('Operator fleet error:', err)
       setOperatorBuses(dbBuses.length > 0 ? dbBuses : DEFAULT_STARTER_FLEET)
     }
   }
@@ -297,7 +303,6 @@ export default function App() {
     const now = new Date()
     return activeFleet
       .filter((bus) => {
-        // Disappear past day buses for passenger search
         if (bus.departureDate && new Date(bus.departureDate) < now) return false
         if (selectedTypeFilter !== 'ALL' && bus.category !== selectedTypeFilter) return false
         if (selectedTimeSlot === 'MORNING' && (bus.departureHour < 6 || bus.departureHour >= 12)) return false
@@ -596,23 +601,64 @@ export default function App() {
     }
   }
 
-  // Operator Handlers
-  const handleOperatorLogin = (e) => {
+  // Operator Handlers (Strict Fixed Admin Phone System)
+  const handleOperatorLoginSubmit = async (e) => {
     e.preventDefault()
-    if (operatorPinInput.trim() === '9924') {
-      sessionStorage.setItem('anhar_operator_auth', 'true')
-      setIsOperatorAuthorized(true)
-      setShowPinModal(false)
-      setActiveTab('operator')
-      setOperatorPinInput('')
-    } else {
-      alert('Unauthorized! Incorrect Operator Security PIN.')
-      setOperatorPinInput('')
+    setIsAuthLoading(true)
+    try {
+      const res = await api.operatorLogin(opLoginName, opLoginPassword)
+      if (res.success) {
+        sessionStorage.setItem('anhar_operator_auth', 'true')
+        sessionStorage.setItem('anhar_operator_name', res.operator.name)
+        setIsOperatorAuthorized(true)
+        setShowPinModal(false)
+        setActiveTab('operator')
+        alert(`Welcome back, ${res.operator.name}!`)
+      } else {
+        alert(res.message || 'Login failed.')
+      }
+    } finally {
+      setIsAuthLoading(false)
+    }
+  }
+
+  const handleRequestAdminOtp = async () => {
+    setIsAuthLoading(true)
+    try {
+      const res = await api.operatorSendSetupOtp()
+      if (res.success) {
+        alert(res.devOtp ? `Dev OTP: ${res.devOtp}` : 'OTP sent to Admin mobile +91 8977733885. Contact admin for OTP.')
+      } else {
+        alert(res.message || 'Failed to send OTP to Admin.')
+      }
+    } finally {
+      setIsAuthLoading(false)
+    }
+  }
+
+  const handleOperatorRegisterSubmit = async (e) => {
+    e.preventDefault()
+    setIsAuthLoading(true)
+    try {
+      const res = await api.operatorRegisterWithOtp(opRegisterName, opRegisterPassword, opOtpInput)
+      if (res.success) {
+        alert('Registration complete! You are now logged in.')
+        sessionStorage.setItem('anhar_operator_auth', 'true')
+        sessionStorage.setItem('anhar_operator_name', res.operator.name)
+        setIsOperatorAuthorized(true)
+        setShowPinModal(false)
+        setActiveTab('operator')
+      } else {
+        alert(res.message || 'Registration failed.')
+      }
+    } finally {
+      setIsAuthLoading(false)
     }
   }
 
   const handleOperatorLogout = () => {
     sessionStorage.removeItem('anhar_operator_auth')
+    sessionStorage.removeItem('anhar_operator_name')
     setIsOperatorAuthorized(false)
     setActiveTab('book')
   }
@@ -638,9 +684,15 @@ export default function App() {
     }
   }
 
-  // Operator Removes / Deletes Bus
+  // Operator Removes / Deletes Bus using centralized api.deleteBus
   const handleRemoveBus = async (bus) => {
     const busId = bus._id || bus.id
+
+    if (String(busId).startsWith('default-bus-')) {
+      alert('This is a built-in starter template. You can add and delete real buses from "+ Add Bus & Configure Pricing".')
+      return
+    }
+
     const isPast = bus.departureDate ? new Date(bus.departureDate) < new Date() : false
     const confirmMessage = isPast 
       ? `Delete completed bus (${bus.busNumber}) from your history?`
@@ -649,17 +701,14 @@ export default function App() {
     if (!window.confirm(confirmMessage)) return
 
     try {
-      const response = await fetch(`https://anhar-bus.onrender.com/api/buses/${busId}`, {
-        method: 'DELETE'
-      })
-      const result = await response.json()
+      const result = await api.deleteBus(busId)
 
-      if (result.success) {
+      if (result && result.success) {
         alert('Bus removed successfully.')
         await fetchLatestData()
         await fetchOperatorFleet()
       } else {
-        alert(result.message || 'Cannot remove bus.')
+        alert(result?.message || 'Cannot remove bus.')
       }
     } catch (err) {
       alert('Error connecting to backend server.')
@@ -689,7 +738,7 @@ export default function App() {
     }
   }
 
-  // OTP Authentication Handlers
+  // Passenger OTP Handlers
   const handleRequestOtp = async (e) => {
     e.preventDefault()
     const cleanPhone = loginForm.phone.replace(/\D/g, '').slice(-10)
@@ -1275,29 +1324,128 @@ export default function App() {
         </main>
       )}
 
-      {/* OPERATOR PIN MODAL */}
+      {/* STRICT OPERATOR AUTHENTICATION MODAL */}
       {showPinModal && (
         <div className="modal-backdrop no-print">
-          <div className="modal-box" style={{ maxWidth: '350px' }}>
-            <form onSubmit={handleOperatorLogin}>
-              <h3>🔒 Operator Verification</h3>
-              <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.4rem' }}>
-                Enter your secret PIN to access the Fleet Operator Desk and passenger manifests.
-              </p>
-              <div className="form-group" style={{ marginTop: '1rem' }}>
-                <input 
-                  type="password" 
-                  autoFocus 
-                  required 
-                  maxLength="6" 
-                  placeholder="Enter PIN (9924)" 
-                  value={operatorPinInput} 
-                  onChange={(e) => setOperatorPinInput(e.target.value)} 
-                  style={{ textAlign: 'center', fontSize: '1.4rem' }}
-                />
-              </div>
-              <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }}>Unlock Portal ➔</button>
-            </form>
+          <div className="modal-box" style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h3>🔒 Operator Portal</h3>
+              <button type="button" className="close-btn" onClick={() => setShowPinModal(false)}>✕</button>
+            </div>
+
+            {/* MODE 1: RETURNING LOGIN (NAME + PASSWORD ONLY) */}
+            {operatorAuthMode === 'LOGIN' ? (
+              <form onSubmit={handleOperatorLoginSubmit} style={{ marginTop: '0.8rem' }}>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1rem' }}>
+                  Sign in with your registered <strong>Operator Name</strong> and <strong>Password</strong>.
+                </p>
+
+                <div className="form-group">
+                  <label>Operator Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter your registered name"
+                    value={opLoginName}
+                    onChange={(e) => setOpLoginName(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginTop: '0.8rem' }}>
+                  <label>Password</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Enter your password"
+                    value={opLoginPassword}
+                    onChange={(e) => setOpLoginPassword(e.target.value)}
+                  />
+                </div>
+
+                <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '1.2rem' }} disabled={isAuthLoading}>
+                  {isAuthLoading ? 'Verifying...' : 'Login to Portal ➔'}
+                </button>
+
+                <div style={{ marginTop: '1.2rem', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '0.8rem' }}>
+                  <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    First time logging in?{' '}
+                    <span
+                      style={{ color: '#2563eb', cursor: 'pointer', fontWeight: 'bold' }}
+                      onClick={() => {
+                        setOperatorAuthMode('FIRST_TIME_OTP')
+                        handleRequestAdminOtp()
+                      }}
+                    >
+                      Setup via Admin OTP (+91 8977733885)
+                    </span>
+                  </p>
+                </div>
+              </form>
+            ) : (
+              /* MODE 2: FIRST TIME REGISTRATION VIA FIXED ADMIN NUMBER */
+              <form onSubmit={handleOperatorRegisterSubmit} style={{ marginTop: '0.8rem' }}>
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.8rem', borderRadius: '6px', marginBottom: '1rem' }}>
+                  <p style={{ fontSize: '0.82rem', color: '#166534', margin: 0 }}>
+                    🛡️ Admin Verification Number: <strong>+91 8977733885</strong>
+                    <br />
+                    OTP has been dispatched to the admin. Enter the code below to register.
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label>Your Operator Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Areef Express / Royal Travels"
+                    value={opRegisterName}
+                    onChange={(e) => setOpRegisterName(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginTop: '0.8rem' }}>
+                  <label>Admin OTP (from 8977733885)</label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input
+                      type="text"
+                      required
+                      maxLength="4"
+                      placeholder="••••"
+                      value={opOtpInput}
+                      onChange={(e) => setOpOtpInput(e.target.value)}
+                      style={{ textAlign: 'center', fontSize: '1.2rem', letterSpacing: '0.2rem' }}
+                    />
+                    <button type="button" className="select-seat-btn" onClick={handleRequestAdminOtp} disabled={isAuthLoading}>
+                      Resend
+                    </button>
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginTop: '0.8rem' }}>
+                  <label>Create Your Password</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Create a strong password"
+                    value={opRegisterPassword}
+                    onChange={(e) => setOpRegisterPassword(e.target.value)}
+                  />
+                </div>
+
+                <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '1.2rem' }} disabled={isAuthLoading}>
+                  {isAuthLoading ? 'Registering...' : 'Register & Enter Portal ➔'}
+                </button>
+
+                <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+                  <span
+                    style={{ color: '#2563eb', cursor: 'pointer', fontSize: '0.8rem' }}
+                    onClick={() => setOperatorAuthMode('LOGIN')}
+                  >
+                    ← Back to Login
+                  </span>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
