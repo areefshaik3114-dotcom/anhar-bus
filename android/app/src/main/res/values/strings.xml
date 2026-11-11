@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ANHAR BUS</string>
+    <string name="title_activity_main">ANHAR BUS</string>
+    <string name="package_name">com.anharbus.app</string>
+    <string name="custom_url_scheme">com.anharbus.app</string>
+</resources>

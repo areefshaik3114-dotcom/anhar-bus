@@ -27,7 +27,7 @@ const CITY_POINTS = {
   ]
 }
 
-// Built-in starter fleet so buses are never blank
+// Built-in starter fleet fallback
 const DEFAULT_STARTER_FLEET = [
   {
     _id: 'default-bus-1',
@@ -38,6 +38,7 @@ const DEFAULT_STARTER_FLEET = [
     destination: 'Hyderabad',
     departure: '21:30',
     departureHour: 21.5,
+    departureDate: new Date(Date.now() + 86400000).toISOString(),
     arrival: '06:00',
     duration: '8h 30m',
     layoutType: 'MIXED_SEATER_SLEEPER',
@@ -72,6 +73,7 @@ const DEFAULT_STARTER_FLEET = [
     destination: 'Hyderabad',
     departure: '22:15',
     departureHour: 22.25,
+    departureDate: new Date(Date.now() + 86400000).toISOString(),
     arrival: '06:45',
     duration: '8h 30m',
     layoutType: 'ALL_SLEEPER',
@@ -106,6 +108,7 @@ const DEFAULT_STARTER_FLEET = [
     destination: 'Guntakal',
     departure: '07:30',
     departureHour: 7.5,
+    departureDate: new Date(Date.now() + 86400000).toISOString(),
     arrival: '14:30',
     duration: '7h 00m',
     layoutType: 'PUSHBACK_ONLY',
@@ -127,10 +130,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('book')
   const [source, setSource] = useState('Bengaluru')
   const [destination, setDestination] = useState('Hyderabad')
-  const [journeyDate, setJourneyDate] = useState('2026-11-10')
+  const [journeyDate, setJourneyDate] = useState(() => new Date().toISOString().split('T')[0])
   const [selectedBus, setSelectedBus] = useState(null)
   const [selectedSeats, setSelectedSeats] = useState([])
-  const [selectedDeckView, setSelectedDeckView] = useState('LOWER') // 'LOWER' | 'UPPER' | 'SINGLE'
+  const [selectedDeckView, setSelectedDeckView] = useState('LOWER')
 
   // Pick-up and Drop selection
   const [selectedBoardingPoint, setSelectedBoardingPoint] = useState('')
@@ -159,6 +162,7 @@ export default function App() {
 
   // Fleet & Manifest States
   const [dbBuses, setDbBuses] = useState([])
+  const [operatorBuses, setOperatorBuses] = useState([])
   const [selectedManifestBus, setSelectedManifestBus] = useState(null)
   const [manifestList, setManifestList] = useState([])
   const [isLoadingManifest, setIsLoadingManifest] = useState(false)
@@ -169,6 +173,7 @@ export default function App() {
     name: '',
     busNumber: '',
     operatorPhone: '',
+    date: new Date().toISOString().split('T')[0],
     source: 'Bengaluru',
     destination: 'Hyderabad',
     departure: '21:30',
@@ -232,9 +237,31 @@ export default function App() {
     }
   }
 
+  // Fetch operator fleet with view-only tags for past departures
+  const fetchOperatorFleet = async () => {
+    try {
+      const operatorPhone = currentUser || '8977733885'
+      const res = await fetch(`https://anhar-bus.onrender.com/api/operator/my-buses?phone=${operatorPhone}`)
+      const data = await res.json()
+      if (data && data.success && Array.isArray(data.buses)) {
+        setOperatorBuses(data.buses)
+      } else {
+        setOperatorBuses(dbBuses.length > 0 ? dbBuses : DEFAULT_STARTER_FLEET)
+      }
+    } catch (err) {
+      setOperatorBuses(dbBuses.length > 0 ? dbBuses : DEFAULT_STARTER_FLEET)
+    }
+  }
+
   useEffect(() => {
     fetchLatestData()
   }, [source, destination])
+
+  useEffect(() => {
+    if (activeTab === 'operator' && isOperatorAuthorized) {
+      fetchOperatorFleet()
+    }
+  }, [activeTab, isOperatorAuthorized])
 
   // Sync user wallet from MongoDB
   useEffect(() => {
@@ -261,15 +288,17 @@ export default function App() {
     setSelectedDroppingPoint(CITY_POINTS[destination]?.[0]?.name || destination)
   }, [source, destination])
 
-  // Active Fleet Selection
   const activeFleet = useMemo(() => {
     return dbBuses.length > 0 ? dbBuses : DEFAULT_STARTER_FLEET
   }, [dbBuses])
 
-  // Filtered & Sorted Bus Fleet
+  // Filtered & Sorted Bus Fleet (Expired buses disappear automatically)
   const filteredAndSortedBuses = useMemo(() => {
+    const now = new Date()
     return activeFleet
       .filter((bus) => {
+        // Disappear past day buses for passenger search
+        if (bus.departureDate && new Date(bus.departureDate) < now) return false
         if (selectedTypeFilter !== 'ALL' && bus.category !== selectedTypeFilter) return false
         if (selectedTimeSlot === 'MORNING' && (bus.departureHour < 6 || bus.departureHour >= 12)) return false
         if (selectedTimeSlot === 'EVENING' && (bus.departureHour < 18 || bus.departureHour >= 23)) return false
@@ -597,15 +626,54 @@ export default function App() {
       }
       const res = await api.createOperatorBus(payload)
       if (res && res.success) {
-        alert(`Bus ${res.bus.busNumber} published with custom seat prices!`)
+        alert(`Bus ${res.bus.busNumber} published successfully!`)
         setShowAddBusModal(false)
         await fetchLatestData()
+        await fetchOperatorFleet()
       } else {
         alert(res?.error || 'Failed to add bus.')
       }
     } catch (err) {
       alert('Network error while adding bus schedule.')
     }
+  }
+
+  // Operator Removes / Deletes Bus
+  const handleRemoveBus = async (bus) => {
+    const busId = bus._id || bus.id
+    const isPast = bus.departureDate ? new Date(bus.departureDate) < new Date() : false
+    const confirmMessage = isPast 
+      ? `Delete completed bus (${bus.busNumber}) from your history?`
+      : `Are you sure you want to remove bus (${bus.busNumber})? Active bookings will be safeguarded.`
+
+    if (!window.confirm(confirmMessage)) return
+
+    try {
+      const response = await fetch(`https://anhar-bus.onrender.com/api/buses/${busId}`, {
+        method: 'DELETE'
+      })
+      const result = await response.json()
+
+      if (result.success) {
+        alert('Bus removed successfully.')
+        await fetchLatestData()
+        await fetchOperatorFleet()
+      } else {
+        alert(result.message || 'Cannot remove bus.')
+      }
+    } catch (err) {
+      alert('Error connecting to backend server.')
+    }
+  }
+
+  // Operator Edit Bus check
+  const handleEditBus = (bus) => {
+    const isPast = bus.departureDate ? new Date(bus.departureDate) < new Date() : false
+    if (isPast) {
+      alert('⚠️ This bus trip is already completed. Past schedules are view-only and cannot be edited.')
+      return
+    }
+    alert(`Edit feature open for ${bus.busNumber}. (Active trip)`)
   }
 
   const handleViewManifest = async (busId) => {
@@ -1107,7 +1175,7 @@ export default function App() {
           <div className="results-header-row">
             <div>
               <h2>🚍 Fleet Operator Desk</h2>
-              <p>Configure layouts, tiered seat prices, and view live charts</p>
+              <p>Configure layouts, remove old buses, and view trip records</p>
             </div>
             <div style={{ display: 'flex', gap: '0.8rem' }}>
               <button className="confirm-btn" onClick={() => setShowAddBusModal(true)}>+ Add Bus & Configure Pricing</button>
@@ -1116,19 +1184,65 @@ export default function App() {
           </div>
 
           <div className="bus-list">
-            {activeFleet.map(bus => {
+            {(operatorBuses.length > 0 ? operatorBuses : activeFleet).map(bus => {
               const busKey = bus._id || bus.id
+              const isPast = bus.departureDate ? new Date(bus.departureDate) < new Date() : false
+
               return (
-                <div key={busKey} className="booking-card">
+                <div key={busKey} className="booking-card" style={{ opacity: isPast ? 0.9 : 1, borderLeft: isPast ? '4px solid #94a3b8' : '4px solid #16a34a' }}>
                   <div className="booking-top">
                     <div>
-                      <span className="pnr-tag">{bus.busNumber}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                        <span className="pnr-tag">{bus.busNumber}</span>
+                        {isPast ? (
+                          <span style={{ fontSize: '0.75rem', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
+                            ⌛ Completed (Past Day)
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
+                            🟢 Upcoming
+                          </span>
+                        )}
+                      </div>
                       <h4>{bus.name}</h4>
                       <p>{bus.source} → {bus.destination} • Dept: {bus.departure} • Type: {bus.layoutType}</p>
+                      {bus.departureDate && (
+                        <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                          📅 Scheduled Departure: {new Date(bus.departureDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                      )}
                     </div>
-                    <button className="select-seat-btn" onClick={() => handleViewManifest(busKey)}>
-                      📋 Passenger Chart ({journeyDate})
-                    </button>
+                    
+                    {/* OPERATOR ACTIONS: EDIT, REMOVE & MANIFEST */}
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <button className="select-seat-btn" onClick={() => handleViewManifest(busKey)}>
+                        📋 Passenger Chart
+                      </button>
+
+                      {/* EDIT BUTTON: Disabled if past day */}
+                      <button 
+                        className="select-seat-btn" 
+                        disabled={isPast}
+                        title={isPast ? 'Past trips cannot be modified' : 'Edit details'}
+                        style={{ 
+                          background: isPast ? '#f1f5f9' : '#e0f2fe', 
+                          color: isPast ? '#94a3b8' : '#0369a1',
+                          cursor: isPast ? 'not-allowed' : 'pointer'
+                        }}
+                        onClick={() => handleEditBus(bus)}
+                      >
+                        ✏️ {isPast ? 'Read Only' : 'Edit Bus'}
+                      </button>
+
+                      {/* REMOVE / DELETE BUTTON: Always active */}
+                      <button 
+                        className="select-seat-btn" 
+                        style={{ background: '#fee2e2', color: '#b91c1c' }}
+                        onClick={() => handleRemoveBus(bus)}
+                      >
+                        🗑️ Remove Bus
+                      </button>
+                    </div>
                   </div>
 
                   {selectedManifestBus === busKey && (
@@ -1188,7 +1302,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD BUS MODAL WITH TIERED SEAT PRICING */}
+      {/* ADD BUS MODAL WITH TIERED SEAT PRICING & DATE SELECTOR */}
       {showAddBusModal && (
         <div className="modal-backdrop no-print">
           <div className="modal-box large-modal">
@@ -1221,6 +1335,20 @@ export default function App() {
 
               <div className="form-row">
                 <div className="form-group flex-1">
+                  <label>Departure Date</label>
+                  <input type="date" required value={newBusForm.date} onChange={(e) => setNewBusForm({ ...newBusForm, date: e.target.value })} />
+                </div>
+                <div className="form-group flex-1">
+                  <label>Departure Time</label>
+                  <input type="time" required value={newBusForm.departure} onChange={(e) => {
+                    const [h, m] = e.target.value.split(':').map(Number);
+                    setNewBusForm({ ...newBusForm, departure: e.target.value, departureHour: h + m / 60 });
+                  }} />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group flex-1">
                   <label>From (Source)</label>
                   <select value={newBusForm.source} onChange={(e) => setNewBusForm({ ...newBusForm, source: e.target.value })}>
                     <option value="Bengaluru">Bengaluru</option>
@@ -1241,13 +1369,6 @@ export default function App() {
               </div>
 
               <div className="form-row">
-                <div className="form-group flex-1">
-                  <label>Departure Time</label>
-                  <input type="time" required value={newBusForm.departure} onChange={(e) => {
-                    const [h, m] = e.target.value.split(':').map(Number);
-                    setNewBusForm({ ...newBusForm, departure: e.target.value, departureHour: h + m / 60 });
-                  }} />
-                </div>
                 <div className="form-group flex-1">
                   <label>Base Display Fare (₹)</label>
                   <input type="number" required min="100" value={newBusForm.price} onChange={(e) => setNewBusForm({ ...newBusForm, price: Number(e.target.value) })} />

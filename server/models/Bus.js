@@ -10,6 +10,10 @@ const SeatDetailSchema = new mongoose.Schema({
 });
 
 const BusSchema = new mongoose.Schema({
+  operatorId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User' 
+  },
   name: { type: String, required: true },
   busNumber: { type: String, required: true },
   operatorPhone: { type: String, required: true },
@@ -17,6 +21,11 @@ const BusSchema = new mongoose.Schema({
   destination: { type: String, required: true },
   departure: { type: String, required: true },
   departureHour: { type: Number, required: true },
+  departureDate: { 
+    type: Date, 
+    required: true,
+    index: true 
+  },
   arrival: { type: String, required: true },
   duration: { type: String, default: '8h 30m' },
   layoutType: { 
@@ -26,7 +35,7 @@ const BusSchema = new mongoose.Schema({
   },
   category: { type: String, default: 'Mixed Seater & Sleeper' },
   type: { type: String, default: '2+1 Executive AC Sleeper' },
-  price: { type: Number, required: true }, // Starting display fare
+  price: { type: Number, required: true },
   totalSeats: { type: Number, default: 30 },
   seats: [SeatDetailSchema],
   boardingPoints: [
@@ -35,8 +44,16 @@ const BusSchema = new mongoose.Schema({
   droppingPoints: [
     { name: String, timeOffset: String }
   ],
-  isActive: { type: Boolean, default: true },
+  status: {
+    type: String,
+    enum: ['active', 'cancelled', 'completed'],
+    default: 'active',
+    index: true
+  },
+  isActive: { type: Boolean, default: true, index: true },
   createdAt: { type: Date, default: Date.now }
 });
+
+BusSchema.index({ source: 1, destination: 1, departureDate: 1, isActive: 1, status: 1 });
 
 module.exports = mongoose.model('Bus', BusSchema);

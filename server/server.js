@@ -158,6 +158,11 @@ const seedDefaultFleetIfEmpty = async () => {
     const count = await Bus.countDocuments();
     if (count === 0) {
       console.log('Seeding initial ANHAR BUS fleet into MongoDB Atlas...');
+      
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const datePrefix = tomorrow.toISOString().split('T')[0];
+
       const defaultBuses = [
         {
           name: 'ANHAR Multi-Axle Volvo Semi-Sleeper',
@@ -167,6 +172,7 @@ const seedDefaultFleetIfEmpty = async () => {
           destination: 'Hyderabad',
           departure: '21:30',
           departureHour: 21.5,
+          departureDate: new Date(`${datePrefix}T21:30:00.000Z`),
           arrival: '06:00',
           duration: '8h 30m',
           layoutType: 'MIXED_SEATER_SLEEPER',
@@ -174,6 +180,8 @@ const seedDefaultFleetIfEmpty = async () => {
           type: '2+1 Lower Pushback + Upper Sleeper',
           price: 650,
           totalSeats: 30,
+          status: 'active',
+          isActive: true,
           seats: buildDynamicSeats('MIXED_SEATER_SLEEPER', { basePrice: 650, lowerLeftPrice: 650, lowerRightPrice: 700, upperLeftPrice: 900, upperRightPrice: 950, backPrice: 590 }),
           boardingPoints: [
             { name: 'Majestic (Bus Stand Platform 4)', timeOffset: '+0h 00m' },
@@ -192,6 +200,7 @@ const seedDefaultFleetIfEmpty = async () => {
           destination: 'Hyderabad',
           departure: '22:15',
           departureHour: 22.25,
+          departureDate: new Date(`${datePrefix}T22:15:00.000Z`),
           arrival: '06:45',
           duration: '8h 30m',
           layoutType: 'ALL_SLEEPER',
@@ -199,6 +208,8 @@ const seedDefaultFleetIfEmpty = async () => {
           type: '2+1 Executive Sleeper (Lower + Upper)',
           price: 950,
           totalSeats: 30,
+          status: 'active',
+          isActive: true,
           seats: buildDynamicSeats('ALL_SLEEPER', { basePrice: 950, lowerLeftPrice: 950, lowerRightPrice: 1000, upperLeftPrice: 1100, upperRightPrice: 1150, backPrice: 850 }),
           boardingPoints: [
             { name: 'Anand Rao Circle (Near Flyover)', timeOffset: '+0h 00m' },
@@ -217,6 +228,7 @@ const seedDefaultFleetIfEmpty = async () => {
           destination: 'Guntakal',
           departure: '07:30',
           departureHour: 7.5,
+          departureDate: new Date(`${datePrefix}T07:30:00.000Z`),
           arrival: '14:30',
           duration: '7h 00m',
           layoutType: 'PUSHBACK_ONLY',
@@ -224,6 +236,8 @@ const seedDefaultFleetIfEmpty = async () => {
           type: '2+2 Pushback AC',
           price: 520,
           totalSeats: 24,
+          status: 'active',
+          isActive: true,
           seats: buildDynamicSeats('PUSHBACK_ONLY', { basePrice: 520, lowerLeftPrice: 520, lowerRightPrice: 550, backPrice: 480 }),
           boardingPoints: [
             { name: 'Majestic (Bus Stand Platform 4)', timeOffset: '+0h 00m' }
@@ -306,30 +320,86 @@ mongoose
 
 app.get('/', (req, res) => res.send('ANHAR BUS Backend Server is live!'));
 
-// --- DYNAMIC FLEET & OPERATOR ENDPOINTS ---
+// ==========================================
+// --- FLEET & OPERATOR ENDPOINTS ---
+// ==========================================
 
-// 1. Search Buses Dynamically
+// 1. PASSENGER SEARCH: Past buses disappear automatically
 app.get('/api/buses/search', async (req, res) => {
   try {
-    const { source, destination } = req.query;
-    const filter = { isActive: true };
+    const { source, destination, date } = req.query;
+    const now = new Date();
+
+    // Query active buses that have not departed yet
+    const filter = {
+      isActive: true,
+      status: 'active',
+      $or: [
+        { departureDate: { $gte: now } },
+        { departureDate: { $exists: false } } // Compatibility fallback
+      ]
+    };
+
     if (source) filter.source = new RegExp(`^${source}$`, 'i');
     if (destination) filter.destination = new RegExp(`^${destination}$`, 'i');
 
-    let buses = await Bus.find(filter).sort({ departureHour: 1 });
+    if (date) {
+      const searchDay = new Date(date);
+      const startOfDay = new Date(searchDay.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(searchDay.setHours(23, 59, 59, 999));
 
-    // Fallback: If no bus matches the exact search, return all active buses so screen is never blank
-    if (buses.length === 0) {
-      buses = await Bus.find({ isActive: true }).sort({ departureHour: 1 });
+      filter.departureDate = {
+        $gte: startOfDay > now ? startOfDay : now,
+        $lte: endOfDay
+      };
     }
 
-    res.json({ success: true, buses });
+    let buses = await Bus.find(filter).sort({ departureDate: 1, departureHour: 1 });
+
+    // Fallback: If no bus matches the exact search, return all active upcoming buses
+    if (buses.length === 0) {
+      buses = await Bus.find({
+        isActive: true,
+        status: 'active',
+        $or: [
+          { departureDate: { $gte: now } },
+          { departureDate: { $exists: false } }
+        ]
+      }).sort({ departureDate: 1, departureHour: 1 });
+    }
+
+    res.json({ success: true, count: buses.length, buses });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// 2. Operator endpoint: Add new bus trip with custom seat-wise pricing
+// 2. OPERATOR FLEET LIST: Operator sees all buses, with flags showing if it's past or editable
+app.get('/api/operator/my-buses', async (req, res) => {
+  try {
+    const { phone } = req.query;
+    const query = { status: { $ne: 'deleted' } };
+    if (phone) query.operatorPhone = String(phone).replace(/\D/g, '').slice(-10);
+
+    const buses = await Bus.find(query).sort({ departureDate: -1, createdAt: -1 });
+    const now = new Date();
+
+    const formattedBuses = buses.map(bus => {
+      const isPast = bus.departureDate ? new Date(bus.departureDate) < now : false;
+      return {
+        ...bus.toObject(),
+        isPast,
+        canEdit: !isPast && bus.status === 'active' // Past days: View-only
+      };
+    });
+
+    res.json({ success: true, buses: formattedBuses });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. OPERATOR ADD NEW BUS
 app.post('/api/operator/buses', async (req, res) => {
   try {
     const busData = { ...req.body };
@@ -345,6 +415,18 @@ app.post('/api/operator/buses', async (req, res) => {
     });
 
     busData.totalSeats = busData.seats.length;
+    busData.status = 'active';
+    busData.isActive = true;
+
+    // Build departureDate object if date and departure string are provided
+    if (busData.date && busData.departure) {
+      const depTime = busData.departure.trim();
+      const timeFormatted = depTime.length === 5 ? depTime : '0' + depTime;
+      busData.departureDate = new Date(`${busData.date}T${timeFormatted}:00.000Z`);
+    } else if (!busData.departureDate) {
+      busData.departureDate = new Date(Date.now() + 24 * 60 * 60 * 1000); // Defaults to tomorrow
+    }
+
     const newBus = await Bus.create(busData);
     res.status(201).json({ success: true, bus: newBus });
   } catch (err) {
@@ -352,7 +434,61 @@ app.post('/api/operator/buses', async (req, res) => {
   }
 });
 
-// 3. Operator endpoint: Live Passenger Trip Manifest
+// 4. OPERATOR EDIT BUS: Strict guard preventing changes if the trip is in the past
+app.put('/api/buses/:id', async (req, res) => {
+  try {
+    const bus = await Bus.findById(req.params.id);
+    if (!bus) {
+      return res.status(404).json({ success: false, message: 'Bus not found' });
+    }
+
+    // Past date check
+    if (bus.departureDate && new Date(bus.departureDate) < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'This bus trip is already completed. Past schedules are view-only and cannot be edited.'
+      });
+    }
+
+    const updatedBus = await Bus.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json({ success: true, message: 'Bus updated successfully', bus: updatedBus });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. OPERATOR REMOVE/DELETE BUS
+app.delete('/api/buses/:id', async (req, res) => {
+  try {
+    const busId = req.params.id;
+    const bus = await Bus.findById(busId);
+    if (!bus) return res.status(404).json({ success: false, message: 'Bus not found' });
+
+    // Check if any passenger booked this bus
+    const activeBookings = await Booking.find({
+      busId: String(busId),
+      status: { $in: ['CONFIRMED', 'confirmed'] }
+    });
+
+    const isFutureTrip = bus.departureDate && new Date(bus.departureDate) >= new Date();
+
+    // Prevent deletion only if there are active bookings for an upcoming trip
+    if (activeBookings.length > 0 && isFutureTrip) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete bus: ${activeBookings.length} passenger(s) booked. Cancel bookings first.`
+      });
+    }
+
+    // Soft delete to preserve historical integrity, or hard delete if past
+    await Bus.findByIdAndUpdate(busId, { status: 'deleted', isActive: false });
+    res.json({ success: true, message: 'Bus removed successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. OPERATOR TRIP MANIFEST
 app.get('/api/operator/manifest/:busId/:date', async (req, res) => {
   try {
     const { busId, date } = req.params;
@@ -386,9 +522,11 @@ app.get('/api/operator/manifest/:busId/:date', async (req, res) => {
   }
 });
 
+// ==========================================
 // --- BOOKING & CANCELLATION ENDPOINTS ---
+// ==========================================
 
-// 4. Fetch all bookings
+// 7. Fetch all bookings
 app.get('/api/bookings', async (req, res) => {
   try {
     const bookings = await Booking.find().sort({ createdAt: -1 });
@@ -398,7 +536,7 @@ app.get('/api/bookings', async (req, res) => {
   }
 });
 
-// 5. Create new booking & dispatch SMS
+// 8. Create new booking & dispatch SMS
 app.post('/api/bookings', async (req, res) => {
   try {
     const newBooking = await Booking.create(req.body);
@@ -415,7 +553,7 @@ app.post('/api/bookings', async (req, res) => {
   }
 });
 
-// 6. Tiered redBus Cancellation & Wallet Refund Engine
+// 9. Tiered redBus Cancellation & Wallet Refund Engine
 app.post('/api/bookings/cancel', async (req, res) => {
   try {
     const { pnr } = req.body;
@@ -487,7 +625,9 @@ app.post('/api/bookings/cancel', async (req, res) => {
   }
 });
 
+// ==========================================
 // --- RESALE MARKETPLACE ENDPOINTS ---
+// ==========================================
 
 app.get('/api/resale', async (req, res) => {
   try {
@@ -582,7 +722,9 @@ app.post('/api/resale/buy', async (req, res) => {
   }
 });
 
+// ==========================================
 // --- USER WALLET & OTP AUTH ENDPOINTS ---
+// ==========================================
 
 app.get('/api/wallet/:phone', async (req, res) => {
   try {
