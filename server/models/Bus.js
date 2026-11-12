@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+﻿const mongoose = require('mongoose');
 
 const SeatDetailSchema = new mongoose.Schema({
   seatNumber: { type: Number, required: true },
@@ -53,6 +53,7 @@ const BusSchema = new mongoose.Schema({
   droppingPoints: [
     { name: String, timeOffset: String }
   ],
+  viaStops: [{ type: String }],
   status: {
     type: String,
     enum: ['active', 'cancelled', 'completed'],

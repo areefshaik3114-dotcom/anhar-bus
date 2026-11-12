@@ -1,4 +1,4 @@
-import { api } from './api'
+﻿import { api } from './api'
 import { useState, useEffect, useMemo } from 'react'
 import './App.css'
 
@@ -230,6 +230,9 @@ export default function App() {
 
   // Add Bus Form State
   const [newBusForm, setNewBusForm] = useState({
+    boardingPointsText: '',
+    droppingPointsText: '',
+    viaStopsText: '',
     name: '',
     busNumber: '',
     operatorPhone: '',
@@ -540,7 +543,7 @@ export default function App() {
     const paymentLabel = deduction > 0 && remainingPaid === 0
       ? 'ANHAR WALLET'
       : deduction > 0
-        ? `WALLET (₹${deduction}) + RAZORPAY (${paymentId})`
+        ? `WALLET (â‚¹${deduction}) + RAZORPAY (${paymentId})`
         : `RAZORPAY (${paymentId})`
 
     const newBooking = {
@@ -548,7 +551,7 @@ export default function App() {
       busId: String(selectedBus._id || selectedBus.id),
       busName: selectedBus.name,
       busNumber: selectedBus.busNumber,
-      route: `${source} → ${destination}`,
+      route: `${source} â†’ ${destination}`,
       departure: selectedBus.departure,
       arrival: selectedBus.arrival,
       journeyDate: journeyDate,
@@ -593,7 +596,7 @@ export default function App() {
         // Charge remaining amount via Real Razorpay Gateway
         await triggerRazorpayPayment({
           amountRupees: remainingToPay,
-          description: `${selectedBus.name} (${source} → ${destination})`,
+          description: `${selectedBus.name} (${source} â†’ ${destination})`,
           prefillName: passengerDetails[0]?.name || currentUserName,
           prefillEmail: contactInfo.email || currentUserEmail,
           prefillPhone: contactInfo.phone || currentUser,
@@ -612,13 +615,13 @@ export default function App() {
   }
 
   const handleCancelBooking = async (b) => {
-    const confirmMsg = `Are you sure you want to cancel Ticket PNR: ${b.pnr}?\n\nCancellation Policy:\n• >24 hrs: 10% charge (90% refund)\n• 12-24 hrs: 25% charge (75% refund)\n• 2-12 hrs: 50% charge (50% refund)\n• <2 hrs: Non-refundable\n\nRefund will be credited instantly to your ANHAR Wallet.`
+    const confirmMsg = `Are you sure you want to cancel Ticket PNR: ${b.pnr}?\n\nCancellation Policy:\nâ€¢ >24 hrs: 10% charge (90% refund)\nâ€¢ 12-24 hrs: 25% charge (75% refund)\nâ€¢ 2-12 hrs: 50% charge (50% refund)\nâ€¢ <2 hrs: Non-refundable\n\nRefund will be credited instantly to your ANHAR Wallet.`
     if (!window.confirm(confirmMsg)) return
 
     try {
       const res = await api.cancelBooking(b.pnr)
       if (res && res.success) {
-        alert(`Ticket Cancelled!\n\n• Deduction: ${res.deductionPct}% (₹${res.deductionAmount})\n• Refunded: ₹${res.refundAmount}\n• New Wallet Balance: ₹${res.newBalance}`)
+        alert(`Ticket Cancelled!\n\nâ€¢ Deduction: ${res.deductionPct}% (â‚¹${res.deductionAmount})\nâ€¢ Refunded: â‚¹${res.refundAmount}\nâ€¢ New Wallet Balance: â‚¹${res.newBalance}`)
         if (currentUser) setWalletBalance(res.newBalance)
         await fetchLatestData()
       } else {
@@ -848,12 +851,15 @@ export default function App() {
 
       const payload = {
         ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia,
         totalSeats: calculatedTotal,
         operatorPhone: currentUser || '8977733885'
       }
       const res = await api.createOperatorBus(payload)
       if (res && res.success) {
-        alert(`Bus ${res.bus.busNumber} (${res.bus.category} • ${res.bus.totalSeats} Seats/Berths) published successfully!`)
+        alert(`Bus ${res.bus.busNumber} (${res.bus.category} â€¢ ${res.bus.totalSeats} Seats/Berths) published successfully!`)
         setShowAddBusModal(false)
         await fetchLatestData()
         await fetchOperatorFleet()
@@ -965,7 +971,7 @@ export default function App() {
   // Wallet Top-Up via Real Razorpay Checkout
   const addFundsToWallet = async () => {
     if (!currentUser) return setShowLoginModal(true)
-    const amount = Number(prompt('Enter amount to add to ANHAR Wallet (₹):', '500'))
+    const amount = Number(prompt('Enter amount to add to ANHAR Wallet (â‚¹):', '500'))
     if (amount > 0) {
       try {
         await triggerRazorpayPayment({
@@ -978,7 +984,7 @@ export default function App() {
             const res = await api.updateWallet(currentUser, amount)
             if (res && res.success) {
               setWalletBalance(res.balance)
-              alert(`₹${amount} added to your ANHAR Wallet!`)
+              alert(`â‚¹${amount} added to your ANHAR Wallet!`)
             }
           }
         })
@@ -1014,12 +1020,12 @@ export default function App() {
           type="button"
           disabled={isBooked}
           className={unitClass}
-          title={`${seat.seatLabel} (${seat.type}) - ${isBooked ? 'Sold' : `₹${resaleItem ? resaleItem.resalePrice : seat.price}`}`}
+          title={`${seat.seatLabel} (${seat.type}) - ${isBooked ? 'Sold' : `â‚¹${resaleItem ? resaleItem.resalePrice : seat.price}`}`}
           onClick={() => handleSeatClick(seat, bus)}
         >
           <span className="unit-code">{seat.seatLabel}</span>
           {isFemaleBooked && <FemaleBadgeIcon />}
-          {resaleItem && <span className="resale-bolt">⚡</span>}
+          {resaleItem && <span className="resale-bolt">âš¡</span>}
           {isSleeper ? (
             <span className="berth-pillow" />
           ) : (
@@ -1027,7 +1033,7 @@ export default function App() {
           )}
         </button>
         <span className={`unit-price-label ${isBooked ? 'sold-text' : isSelected ? 'selected-text' : resaleItem ? 'resale-text' : ''}`}>
-          {isBooked ? 'Sold' : `₹${resaleItem ? resaleItem.resalePrice : seat.price}`}
+          {isBooked ? 'Sold' : `â‚¹${resaleItem ? resaleItem.resalePrice : seat.price}`}
         </span>
       </div>
     )
@@ -1096,7 +1102,7 @@ export default function App() {
       <header className="navbar no-print">
         <div className="nav-container">
           <div className="brand">
-            <span>🚌</span>
+            <span>ðŸšŒ</span>
             <span>ANHAR BUS</span>
           </div>
           <nav className="nav-links">
@@ -1110,15 +1116,15 @@ export default function App() {
               My Bookings ({userPersonalBookings.length})
             </button>
             <button className={`nav-btn ${activeTab === 'operator' ? 'active' : ''}`} onClick={() => isOperatorAuthorized ? setActiveTab('operator') : setShowPinModal(true)}>
-              🔒 Operator Portal
+              ðŸ”’ Operator Portal
             </button>
             <div className="wallet-chip" onClick={addFundsToWallet} title="Click to Top-Up Wallet via Razorpay">
-              💰 Wallet: <strong>₹{walletBalance}</strong> <span className="wallet-plus">+</span>
+              ðŸ’° Wallet: <strong>â‚¹{walletBalance}</strong> <span className="wallet-plus">+</span>
             </div>
             {currentUser ? (
               <div className="user-profile-badge">
-                <span>📱 {currentUserName ? `${currentUserName} (+91 ${currentUser})` : `+91 ${currentUser}`}</span>
-                <button className="logout-mini-btn" onClick={() => { localStorage.clear(); setCurrentUser(''); }}>✕</button>
+                <span>ðŸ“± {currentUserName ? `${currentUserName} (+91 ${currentUser})` : `+91 ${currentUser}`}</span>
+                <button className="logout-mini-btn" onClick={() => { localStorage.clear(); setCurrentUser(''); }}>âœ•</button>
               </div>
             ) : (
               <button className="login-nav-btn" onClick={() => setShowLoginModal(true)}>Login</button>
@@ -1145,7 +1151,7 @@ export default function App() {
                 </div>
 
                 <div className="swap-btn-container">
-                  <button type="button" className="swap-city-btn" title="Swap Cities" onClick={swapCities}>⇄</button>
+                  <button type="button" className="swap-city-btn" title="Swap Cities" onClick={swapCities}>â‡„</button>
                 </div>
 
                 <div className="input-group">
@@ -1170,7 +1176,7 @@ export default function App() {
           <main className="results-container no-print">
             <div className="results-header-row">
               <div>
-                <h3>Available Buses: {source} → {destination}</h3>
+                <h3>Available Buses: {source} â†’ {destination}</h3>
                 <p className="route-sub-count">Showing {filteredAndSortedBuses.length} active fleet services</p>
               </div>
 
@@ -1193,13 +1199,13 @@ export default function App() {
                     All Coaches
                   </button>
                   <button className={`pill-btn ${selectedTypeFilter === 'SLEEPER' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('SLEEPER')}>
-                    🛏️ All Sleeper
+                    ðŸ›ï¸ All Sleeper
                   </button>
                   <button className={`pill-btn ${selectedTypeFilter === 'MIXED' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('MIXED')}>
-                    🚌 Sleeper + Seater
+                    ðŸšŒ Sleeper + Seater
                   </button>
                   <button className={`pill-btn ${selectedTypeFilter === 'SEATER' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('SEATER')}>
-                    💺 Seater Only
+                    ðŸ’º Seater Only
                   </button>
                 </div>
               </div>
@@ -1211,10 +1217,10 @@ export default function App() {
                     AC & Non-AC
                   </button>
                   <button className={`pill-btn ${selectedAcFilter === 'AC' ? 'active' : ''}`} onClick={() => setSelectedAcFilter('AC')}>
-                    ❄️ AC Only
+                    â„ï¸ AC Only
                   </button>
                   <button className={`pill-btn ${selectedAcFilter === 'NON_AC' ? 'active' : ''}`} onClick={() => setSelectedAcFilter('NON_AC')}>
-                    🌬️ Non-AC
+                    ðŸŒ¬ï¸ Non-AC
                   </button>
                 </div>
               </div>
@@ -1226,13 +1232,13 @@ export default function App() {
                     Any Time
                   </button>
                   <button className={`pill-btn ${selectedTimeSlot === 'MORNING' ? 'active' : ''}`} onClick={() => setSelectedTimeSlot('MORNING')}>
-                    🌅 Morning
+                    ðŸŒ… Morning
                   </button>
                   <button className={`pill-btn ${selectedTimeSlot === 'EVENING' ? 'active' : ''}`} onClick={() => setSelectedTimeSlot('EVENING')}>
-                    🌇 Evening
+                    ðŸŒ‡ Evening
                   </button>
                   <button className={`pill-btn ${selectedTimeSlot === 'NIGHT' ? 'active' : ''}`} onClick={() => setSelectedTimeSlot('NIGHT')}>
-                    🌙 Night
+                    ðŸŒ™ Night
                   </button>
                 </div>
               </div>
@@ -1258,19 +1264,19 @@ export default function App() {
                         <h4>{bus.name}</h4>
                         <div className="bus-spec-tags">
                           <span className={`ac-pill ${isAc ? 'ac-yes' : 'ac-no'}`}>
-                            {isAc ? '❄️ AC' : '🌬️ Non-AC'}
+                            {isAc ? 'â„ï¸ AC' : 'ðŸŒ¬ï¸ Non-AC'}
                           </span>
                           <span className="bus-badge">
                             {bus.layoutType === 'ALL_SLEEPER'
-                              ? `All Sleeper • ${allSeats.length} Berths`
+                              ? `All Sleeper â€¢ ${allSeats.length} Berths`
                               : bus.layoutType === 'MIXED_SEATER_SLEEPER'
-                                ? `Sleeper + Seater • ${lowerSeats.length} Seats + ${upperSeats.length} Berths`
-                                : `Seater Coach • ${allSeats.length} Seats`}
+                                ? `Sleeper + Seater â€¢ ${lowerSeats.length} Seats + ${upperSeats.length} Berths`
+                                : `Seater Coach â€¢ ${allSeats.length} Seats`}
                           </span>
                           <span className="bus-reg-tag">{bus.busNumber}</span>
                         </div>
                       </div>
-                      <div className="rating-tag">4.8 ★</div>
+                      <div className="rating-tag">4.8 â˜…</div>
                     </div>
 
                     <div className="bus-timings">
@@ -1288,7 +1294,7 @@ export default function App() {
                       </div>
                       <div className="bus-price">
                         <span className="fare-label">Starts From</span>
-                        <h3>₹{bus.price}</h3>
+                        <h3>â‚¹{bus.price}</h3>
                       </div>
                     </div>
 
@@ -1308,7 +1314,7 @@ export default function App() {
                           <div>
                             <h5>Select Your Berth / Seat</h5>
                             <span className="coach-layout-caption">
-                              {isAc ? 'Air Conditioned' : 'Non-AC'} •{' '}
+                              {isAc ? 'Air Conditioned' : 'Non-AC'} â€¢{' '}
                               {bus.layoutType === 'ALL_SLEEPER'
                                 ? `2+1 Sleeper (${lowerSeats.length} Lower + ${upperSeats.length} Upper Berths)`
                                 : bus.layoutType === 'MIXED_SEATER_SLEEPER'
@@ -1322,7 +1328,7 @@ export default function App() {
                             <div className="legend-item"><span className="legend-box sel-box"></span> Selected</div>
                             <div className="legend-item"><span className="legend-box sold-box"></span> Sold</div>
                             <div className="legend-item"><span className="legend-box female-box"></span> Ladies</div>
-                            <div className="legend-item"><span className="legend-box resale-box"></span> Resale ⚡</div>
+                            <div className="legend-item"><span className="legend-box resale-box"></span> Resale âš¡</div>
                           </div>
                         </div>
 
@@ -1363,9 +1369,9 @@ export default function App() {
                         {/* Pick-up / Drop selection */}
                         <div className="points-selection-grid">
                           <div className="points-box">
-                            <label className="points-label">📍 Boarding Points in {source}</label>
+                            <label className="points-label">ðŸ“ Boarding Points in {source}</label>
                             <div className="points-options">
-                              {(CITY_POINTS[source] || []).map((bp) => {
+                              {((selectedBus?.boardingPoints?.length ? selectedBus.boardingPoints.map((p, i) => ({ id: i, ...p })) : CITY_POINTS[source]) || []).map((bp) => {
                                 const isSelected = selectedBoardingPoint === bp.name
                                 return (
                                   <div
@@ -1385,9 +1391,9 @@ export default function App() {
                           </div>
 
                           <div className="points-box">
-                            <label className="points-label">🎯 Dropping Points in {destination}</label>
+                            <label className="points-label">ðŸŽ¯ Dropping Points in {destination}</label>
                             <div className="points-options">
-                              {(CITY_POINTS[destination] || []).map((dp) => {
+                              {((selectedBus?.droppingPoints?.length ? selectedBus.droppingPoints.map((p, i) => ({ id: i, ...p })) : CITY_POINTS[destination]) || []).map((dp) => {
                                 const isSelected = selectedDroppingPoint === dp.name
                                 return (
                                   <div
@@ -1409,14 +1415,14 @@ export default function App() {
 
                         <div className="seat-summary">
                           <div>
-                            <p>Selected ({selectedSeats.length}): <strong>{selectedSeats.map(s => `${s.seatLabel} (₹${s.price})`).join(', ') || 'None'}</strong></p>
+                            <p>Selected ({selectedSeats.length}): <strong>{selectedSeats.map(s => `${s.seatLabel} (â‚¹${s.price})`).join(', ') || 'None'}</strong></p>
                             <p className="chosen-points-preview">
                               <strong>Pickup:</strong> {selectedBoardingPoint} | <strong>Drop:</strong> {selectedDroppingPoint}
                             </p>
                           </div>
                           <div className="action-col">
                             <button className="confirm-btn" disabled={selectedSeats.length === 0} onClick={handleProceedToDetails}>
-                              Proceed to Passenger Details (₹{totalCalculatedFare}) ➔
+                              Proceed to Passenger Details (â‚¹{totalCalculatedFare}) âž”
                             </button>
                           </div>
                         </div>
@@ -1445,8 +1451,8 @@ export default function App() {
                   <div>
                     <span className="pnr-tag">PNR: {b.pnr}</span>
                     <h4>{b.busName}</h4>
-                    <p>{b.route} • {b.journeyDate} at {b.departure}</p>
-                    <p style={{ fontSize: '0.85rem', color: '#64748b' }}>📍 Pickup: {b.boarding} | 🎯 Drop: {b.dropping}</p>
+                    <p>{b.route} â€¢ {b.journeyDate} at {b.departure}</p>
+                    <p style={{ fontSize: '0.85rem', color: '#64748b' }}>ðŸ“ Pickup: {b.boarding} | ðŸŽ¯ Drop: {b.dropping}</p>
                   </div>
                   <strong className={b.status === 'CANCELLED' ? 'status-cancelled' : 'status-confirmed'}>{b.status}</strong>
                 </div>
@@ -1463,16 +1469,16 @@ export default function App() {
                 </div>
 
                 <div className="booking-footer">
-                  <span>Total Paid: <strong>₹{b.totalPaid}</strong></span>
+                  <span>Total Paid: <strong>â‚¹{b.totalPaid}</strong></span>
                   <div className="booking-btn-row">
-                    <button className="view-ticket-btn" onClick={() => setViewTicket(b)}>🖨️ View Ticket</button>
+                    <button className="view-ticket-btn" onClick={() => setViewTicket(b)}>ðŸ–¨ï¸ View Ticket</button>
                     {b.status === 'CONFIRMED' && (
                       <>
                         <button className="resale-trigger-btn" onClick={() => openResaleModal(b)}>
-                          🔄 Resale Seats ({b.passengers.length})
+                          ðŸ”„ Resale Seats ({b.passengers.length})
                         </button>
                         <button className="cancel-ticket-btn" onClick={() => handleCancelBooking(b)}>
-                          ✕ Cancel Ticket
+                          âœ• Cancel Ticket
                         </button>
                       </>
                     )}
@@ -1488,7 +1494,7 @@ export default function App() {
       {activeTab === 'resale-market' && (
         <main className="results-container no-print">
           <div className="section-title-row">
-            <h2>⚡ Quick-Sale Resale Board</h2>
+            <h2>âš¡ Quick-Sale Resale Board</h2>
             <p>Direct passenger re-sales. All tickets lock 1 hour before bus departure.</p>
           </div>
 
@@ -1498,13 +1504,13 @@ export default function App() {
                 <div className="bus-main-info">
                   <div>
                     <h4>{item.busName} (Seat {item.seatNumber})</h4>
-                    <p>{item.route} • {item.date} at {item.time}</p>
-                    <p style={{ fontSize: '0.85rem', color: '#64748b' }}>📍 {item.boarding} ➔ 🎯 {item.dropping}</p>
+                    <p>{item.route} â€¢ {item.date} at {item.time}</p>
+                    <p style={{ fontSize: '0.85rem', color: '#64748b' }}>ðŸ“ {item.boarding} âž” ðŸŽ¯ {item.dropping}</p>
                   </div>
-                  <h3>₹{item.resalePrice}</h3>
+                  <h3>â‚¹{item.resalePrice}</h3>
                 </div>
                 <button className="select-seat-btn" style={{ width: '100%', marginTop: '0.8rem' }} onClick={() => openBuyerModal(item)}>
-                  Buy Seat {item.seatNumber} Now ➔
+                  Buy Seat {item.seatNumber} Now âž”
                 </button>
               </div>
             ))}
@@ -1517,7 +1523,7 @@ export default function App() {
         <main className="results-container no-print">
           <div className="results-header-row">
             <div>
-              <h2>🚍 Fleet Operator Desk</h2>
+              <h2>ðŸš Fleet Operator Desk</h2>
               <p>Configure AC/Non-AC coaches, berth/seat capacity, and pricing</p>
             </div>
             <div style={{ display: 'flex', gap: '0.8rem' }}>
@@ -1539,7 +1545,7 @@ export default function App() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
                         <span className="pnr-tag">{bus.busNumber}</span>
                         <span className={`ac-pill ${isAc ? 'ac-yes' : 'ac-no'}`}>
-                          {isAc ? '❄️ AC' : '🌬️ Non-AC'}
+                          {isAc ? 'â„ï¸ AC' : 'ðŸŒ¬ï¸ Non-AC'}
                         </span>
                         <span className="bus-badge" style={{ marginTop: 0 }}>
                           {bus.layoutType === 'ALL_SLEEPER'
@@ -1550,26 +1556,26 @@ export default function App() {
                         </span>
                         {isPast ? (
                           <span style={{ fontSize: '0.75rem', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
-                            ⌛ Completed
+                            âŒ› Completed
                           </span>
                         ) : (
                           <span style={{ fontSize: '0.75rem', background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
-                            🟢 Upcoming
+                            ðŸŸ¢ Upcoming
                           </span>
                         )}
                       </div>
                       <h4>{bus.name}</h4>
-                      <p>{bus.source} → {bus.destination} • Dept: {bus.departure}</p>
+                      <p>{bus.source} â†’ {bus.destination} â€¢ Dept: {bus.departure}</p>
                       {bus.departureDate && (
                         <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                          📅 Scheduled Departure: {new Date(bus.departureDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          ðŸ“… Scheduled Departure: {new Date(bus.departureDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                       )}
                     </div>
 
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       <button className="select-seat-btn" onClick={() => handleViewManifest(busKey)}>
-                        📋 Passenger Chart
+                        ðŸ“‹ Passenger Chart
                       </button>
 
                       <button
@@ -1583,7 +1589,7 @@ export default function App() {
                         }}
                         onClick={() => handleEditBus(bus)}
                       >
-                        ✏️ {isPast ? 'Read Only' : 'Edit Bus'}
+                        âœï¸ {isPast ? 'Read Only' : 'Edit Bus'}
                       </button>
 
                       <button
@@ -1591,7 +1597,7 @@ export default function App() {
                         style={{ background: '#fee2e2', color: '#b91c1c' }}
                         onClick={() => handleRemoveBus(bus)}
                       >
-                        🗑️ Remove Bus
+                        ðŸ—‘ï¸ Remove Bus
                       </button>
                     </div>
                   </div>
@@ -1631,8 +1637,8 @@ export default function App() {
         <div className="modal-backdrop no-print">
           <div className="modal-box" style={{ maxWidth: '400px' }}>
             <div className="modal-header">
-              <h3>🔒 Operator Portal</h3>
-              <button type="button" className="close-btn" onClick={() => setShowPinModal(false)}>✕</button>
+              <h3>ðŸ”’ Operator Portal</h3>
+              <button type="button" className="close-btn" onClick={() => setShowPinModal(false)}>âœ•</button>
             </div>
 
             {operatorAuthMode === 'LOGIN' ? (
@@ -1663,8 +1669,37 @@ export default function App() {
                   />
                 </div>
 
-                <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '1.2rem' }} disabled={isAuthLoading}>
-                  {isAuthLoading ? 'Verifying...' : 'Login to Portal ➔'}
+                <div className="form-row">
+              <div className="form-group">
+                <label>Boarding Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Guntakal Bus Stand (21:00), Railway Station (21:15)"
+                  value={newBusForm.boardingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, boardingPointsText: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Dropping Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Miyapur (05:30), KPHB (05:45), Lakdikapul (06:15)"
+                  value={newBusForm.droppingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, droppingPointsText: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Route / Via Stops Where Bus Goes (comma-separated)</label>
+              <input
+                type="text"
+                placeholder="e.g. Anantapur, Kurnool, Jadcherla"
+                value={newBusForm.viaStopsText || ''}
+                onChange={(e) => setNewBusForm({ ...newBusForm, viaStopsText: e.target.value })}
+              />
+            </div>
+            <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '1.2rem' }} disabled={isAuthLoading}>
+                  {isAuthLoading ? 'Verifying...' : 'Login to Portal âž”'}
                 </button>
 
                 <div style={{ marginTop: '1.2rem', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '0.8rem' }}>
@@ -1686,7 +1721,7 @@ export default function App() {
               <form onSubmit={handleOperatorRegisterSubmit} style={{ marginTop: '0.8rem' }}>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.8rem', borderRadius: '6px', marginBottom: '1rem' }}>
                   <p style={{ fontSize: '0.82rem', color: '#166534', margin: 0 }}>
-                    🛡️ Admin Verification Number: <strong>+91 8977733885</strong>
+                    ðŸ›¡ï¸ Admin Verification Number: <strong>+91 8977733885</strong>
                     <br />
                     OTP has been dispatched to the admin. Enter the code below to register.
                   </p>
@@ -1710,7 +1745,7 @@ export default function App() {
                       type="text"
                       required
                       maxLength="4"
-                      placeholder="••••"
+                      placeholder="â€¢â€¢â€¢â€¢"
                       value={opOtpInput}
                       onChange={(e) => setOpOtpInput(e.target.value)}
                       style={{ textAlign: 'center', fontSize: '1.2rem', letterSpacing: '0.2rem' }}
@@ -1732,8 +1767,37 @@ export default function App() {
                   />
                 </div>
 
-                <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '1.2rem' }} disabled={isAuthLoading}>
-                  {isAuthLoading ? 'Registering...' : 'Register & Enter Portal ➔'}
+                <div className="form-row">
+              <div className="form-group">
+                <label>Boarding Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Guntakal Bus Stand (21:00), Railway Station (21:15)"
+                  value={newBusForm.boardingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, boardingPointsText: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Dropping Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Miyapur (05:30), KPHB (05:45), Lakdikapul (06:15)"
+                  value={newBusForm.droppingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, droppingPointsText: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Route / Via Stops Where Bus Goes (comma-separated)</label>
+              <input
+                type="text"
+                placeholder="e.g. Anantapur, Kurnool, Jadcherla"
+                value={newBusForm.viaStopsText || ''}
+                onChange={(e) => setNewBusForm({ ...newBusForm, viaStopsText: e.target.value })}
+              />
+            </div>
+            <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '1.2rem' }} disabled={isAuthLoading}>
+                  {isAuthLoading ? 'Registering...' : 'Register & Enter Portal âž”'}
                 </button>
 
                 <div style={{ marginTop: '1rem', textAlign: 'center' }}>
@@ -1741,7 +1805,7 @@ export default function App() {
                     style={{ color: '#2563eb', cursor: 'pointer', fontSize: '0.8rem' }}
                     onClick={() => setOperatorAuthMode('LOGIN')}
                   >
-                    ← Back to Login
+                    â† Back to Login
                   </span>
                 </div>
               </form>
@@ -1757,7 +1821,7 @@ export default function App() {
             <form onSubmit={handleCreateBusSubmit}>
               <div className="modal-header">
                 <h3>Add Bus & Configure Coach Layout</h3>
-                <button type="button" className="close-btn" onClick={() => setShowAddBusModal(false)}>✕</button>
+                <button type="button" className="close-btn" onClick={() => setShowAddBusModal(false)}>âœ•</button>
               </div>
 
               <div className="form-row">
@@ -1768,7 +1832,11 @@ export default function App() {
                     required
                     placeholder="e.g. ANHAR Multi-Axle Volvo"
                     value={newBusForm.name}
-                    onChange={(e) => setNewBusForm({ ...newBusForm, name: e.target.value })}
+                    onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, name: e.target.value })}
                   />
                 </div>
                 <div className="form-group flex-1">
@@ -1778,7 +1846,11 @@ export default function App() {
                     required
                     placeholder="e.g. AP 04 TX 9924"
                     value={newBusForm.busNumber}
-                    onChange={(e) => setNewBusForm({ ...newBusForm, busNumber: e.target.value })}
+                    onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, busNumber: e.target.value })}
                   />
                 </div>
               </div>
@@ -1788,7 +1860,11 @@ export default function App() {
                   <label>Coach Layout Category</label>
                   <select
                     value={newBusForm.layoutType}
-                    onChange={(e) => setNewBusForm({ ...newBusForm, layoutType: e.target.value })}
+                    onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, layoutType: e.target.value })}
                   >
                     <option value="ALL_SLEEPER">All Sleeper Bus (Lower + Upper Berths)</option>
                     <option value="MIXED_SEATER_SLEEPER">Sleeper + Seater Bus (Lower Seats + Upper Berths)</option>
@@ -1803,16 +1879,24 @@ export default function App() {
                     <button
                       type="button"
                       className={`ac-toggle-btn ${newBusForm.acType === 'AC' ? 'active' : ''}`}
-                      onClick={() => setNewBusForm({ ...newBusForm, acType: 'AC' })}
+                      onClick={() => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, acType: 'AC' })}
                     >
-                      ❄️ AC
+                      â„ï¸ AC
                     </button>
                     <button
                       type="button"
                       className={`ac-toggle-btn ${newBusForm.acType === 'NON_AC' ? 'active' : ''}`}
-                      onClick={() => setNewBusForm({ ...newBusForm, acType: 'NON_AC' })}
+                      onClick={() => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, acType: 'NON_AC' })}
                     >
-                      🌬️ Non-AC
+                      ðŸŒ¬ï¸ Non-AC
                     </button>
                   </div>
                 </div>
@@ -1822,10 +1906,10 @@ export default function App() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
                   <strong>
                     {newBusForm.layoutType === 'ALL_SLEEPER'
-                      ? '🛏️ Total Sleeper Berths Configuration'
+                      ? 'ðŸ›ï¸ Total Sleeper Berths Configuration'
                       : newBusForm.layoutType === 'MIXED_SEATER_SLEEPER'
-                        ? '🚌 Lower Seater & Upper Sleeper Berths Count'
-                        : '💺 Total Seater Capacity Configuration'}
+                        ? 'ðŸšŒ Lower Seater & Upper Sleeper Berths Count'
+                        : 'ðŸ’º Total Seater Capacity Configuration'}
                   </strong>
                   <span className="capacity-total-pill">
                     Total Capacity: {isDoubleDeckForm ? Number(newBusForm.lowerCount) + Number(newBusForm.upperCount) : Number(newBusForm.totalSeats)}{' '}
@@ -1847,7 +1931,11 @@ export default function App() {
                         min="6"
                         max="30"
                         value={newBusForm.lowerCount}
-                        onChange={(e) => setNewBusForm({ ...newBusForm, lowerCount: Number(e.target.value) })}
+                        onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, lowerCount: Number(e.target.value) })}
                       />
                     </div>
                     <div className="form-group flex-1" style={{ marginBottom: 0 }}>
@@ -1858,7 +1946,11 @@ export default function App() {
                         min="6"
                         max="30"
                         value={newBusForm.upperCount}
-                        onChange={(e) => setNewBusForm({ ...newBusForm, upperCount: Number(e.target.value) })}
+                        onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, upperCount: Number(e.target.value) })}
                       />
                     </div>
                   </div>
@@ -1871,7 +1963,11 @@ export default function App() {
                       min="12"
                       max="60"
                       value={newBusForm.totalSeats}
-                      onChange={(e) => setNewBusForm({ ...newBusForm, totalSeats: Number(e.target.value) })}
+                      onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, totalSeats: Number(e.target.value) })}
                     />
                   </div>
                 )}
@@ -1880,25 +1976,41 @@ export default function App() {
               <div className="form-row" style={{ marginTop: '0.85rem' }}>
                 <div className="form-group flex-1">
                   <label>Departure Date</label>
-                  <input type="date" required value={newBusForm.date} onChange={(e) => setNewBusForm({ ...newBusForm, date: e.target.value })} />
+                  <input type="date" required value={newBusForm.date} onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, date: e.target.value })} />
                 </div>
                 <div className="form-group flex-1">
                   <label>Departure Time</label>
                   <input type="time" required value={newBusForm.departure} onChange={(e) => {
                     const [h, m] = e.target.value.split(':').map(Number)
-                    setNewBusForm({ ...newBusForm, departure: e.target.value, departureHour: h + m / 60 })
+                    setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, departure: e.target.value, departureHour: h + m / 60 })
                   }} />
                 </div>
                 <div className="form-group flex-1">
                   <label>Arrival Time</label>
-                  <input type="time" required value={newBusForm.arrival} onChange={(e) => setNewBusForm({ ...newBusForm, arrival: e.target.value })} />
+                  <input type="time" required value={newBusForm.arrival} onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, arrival: e.target.value })} />
                 </div>
               </div>
 
               <div className="form-row">
                 <div className="form-group flex-1">
                   <label>From (Source)</label>
-                  <select value={newBusForm.source} onChange={(e) => setNewBusForm({ ...newBusForm, source: e.target.value })}>
+                  <select value={newBusForm.source} onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, source: e.target.value })}>
                     <option value="Bengaluru">Bengaluru</option>
                     <option value="Hyderabad">Hyderabad</option>
                     <option value="Guntakal">Guntakal</option>
@@ -1907,7 +2019,11 @@ export default function App() {
                 </div>
                 <div className="form-group flex-1">
                   <label>To (Destination)</label>
-                  <select value={newBusForm.destination} onChange={(e) => setNewBusForm({ ...newBusForm, destination: e.target.value })}>
+                  <select value={newBusForm.destination} onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, destination: e.target.value })}>
                     <option value="Hyderabad">Hyderabad</option>
                     <option value="Bengaluru">Bengaluru</option>
                     <option value="Guntakal">Guntakal</option>
@@ -1915,40 +2031,89 @@ export default function App() {
                   </select>
                 </div>
                 <div className="form-group flex-1">
-                  <label>Starting Display Fare (₹)</label>
-                  <input type="number" required min="100" value={newBusForm.price} onChange={(e) => setNewBusForm({ ...newBusForm, price: Number(e.target.value) })} />
+                  <label>Starting Display Fare (â‚¹)</label>
+                  <input type="number" required min="100" value={newBusForm.price} onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, price: Number(e.target.value) })} />
                 </div>
               </div>
 
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '0.4rem' }}>
-                <h4 style={{ marginBottom: '0.8rem' }}>Tiered Seat / Berth Price Customization (₹)</h4>
+                <h4 style={{ marginBottom: '0.8rem' }}>Tiered Seat / Berth Price Customization (â‚¹)</h4>
                 <div className="form-row">
                   <div className="form-group flex-1">
-                    <label>{isDoubleDeckForm ? 'Lower Left Single Berth/Seat (₹)' : 'Left Window Side Seat (₹)'}</label>
-                    <input type="number" value={newBusForm.lowerLeftPrice} onChange={(e) => setNewBusForm({ ...newBusForm, lowerLeftPrice: Number(e.target.value) })} />
+                    <label>{isDoubleDeckForm ? 'Lower Left Single Berth/Seat (â‚¹)' : 'Left Window Side Seat (â‚¹)'}</label>
+                    <input type="number" value={newBusForm.lowerLeftPrice} onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, lowerLeftPrice: Number(e.target.value) })} />
                   </div>
                   <div className="form-group flex-1">
-                    <label>{isDoubleDeckForm ? 'Lower Right Double Berth/Seat (₹)' : 'Right Side Seat (₹)'}</label>
-                    <input type="number" value={newBusForm.lowerRightPrice} onChange={(e) => setNewBusForm({ ...newBusForm, lowerRightPrice: Number(e.target.value) })} />
+                    <label>{isDoubleDeckForm ? 'Lower Right Double Berth/Seat (â‚¹)' : 'Right Side Seat (â‚¹)'}</label>
+                    <input type="number" value={newBusForm.lowerRightPrice} onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, lowerRightPrice: Number(e.target.value) })} />
                   </div>
                 </div>
 
                 <div className="form-row" style={{ marginTop: '0.6rem' }}>
                   {isDoubleDeckForm && (
                     <div className="form-group flex-1">
-                      <label>Upper Deck Sleeper Berth (₹)</label>
-                      <input type="number" value={newBusForm.upperLeftPrice} onChange={(e) => setNewBusForm({ ...newBusForm, upperLeftPrice: Number(e.target.value) })} />
+                      <label>Upper Deck Sleeper Berth (â‚¹)</label>
+                      <input type="number" value={newBusForm.upperLeftPrice} onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, upperLeftPrice: Number(e.target.value) })} />
                     </div>
                   )}
                   <div className="form-group flex-1">
-                    <label>Last Row Discounted Price (₹)</label>
-                    <input type="number" value={newBusForm.backPrice} onChange={(e) => setNewBusForm({ ...newBusForm, backPrice: Number(e.target.value) })} />
+                    <label>Last Row Discounted Price (â‚¹)</label>
+                    <input type="number" value={newBusForm.backPrice} onChange={(e) => setNewBusForm({
+        boardingPointsText: '', droppingPointsText: '', viaStopsText: '', ...newBusForm,
+        boardingPoints: customBoarding,
+        droppingPoints: customDropping,
+        viaStops: customVia, backPrice: Number(e.target.value) })} />
                   </div>
                 </div>
               </div>
 
-              <button type="submit" className="confirm-btn" style={{ marginTop: '1.2rem', width: '100%' }}>
-                Publish Bus to Network ➔
+              <div className="form-row">
+              <div className="form-group">
+                <label>Boarding Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Guntakal Bus Stand (21:00), Railway Station (21:15)"
+                  value={newBusForm.boardingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, boardingPointsText: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Dropping Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Miyapur (05:30), KPHB (05:45), Lakdikapul (06:15)"
+                  value={newBusForm.droppingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, droppingPointsText: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Route / Via Stops Where Bus Goes (comma-separated)</label>
+              <input
+                type="text"
+                placeholder="e.g. Anantapur, Kurnool, Jadcherla"
+                value={newBusForm.viaStopsText || ''}
+                onChange={(e) => setNewBusForm({ ...newBusForm, viaStopsText: e.target.value })}
+              />
+            </div>
+            <button type="submit" className="confirm-btn" style={{ marginTop: '1.2rem', width: '100%' }}>
+                Publish Bus to Network âž”
               </button>
             </form>
           </div>
@@ -1962,12 +2127,12 @@ export default function App() {
             <form onSubmit={handleProceedToPayment}>
               <div className="modal-header">
                 <h3>Passenger Details ({passengerDetails.length} Selected)</h3>
-                <button type="button" className="close-btn" onClick={() => setShowPassengerModal(false)}>✕</button>
+                <button type="button" className="close-btn" onClick={() => setShowPassengerModal(false)}>âœ•</button>
               </div>
 
               {passengerDetails.map((p, idx) => (
                 <div key={p.seatNumber} className="booking-card" style={{ marginBottom: '0.8rem' }}>
-                  <h5>Passenger {idx + 1} — {p.seatLabel} (₹{p.price})</h5>
+                  <h5>Passenger {idx + 1} â€” {p.seatLabel} (â‚¹{p.price})</h5>
                   <div className="form-row" style={{ marginTop: '0.5rem' }}>
                     <div className="form-group flex-2">
                       <input type="text" required placeholder="Full Name (as per Govt ID)" value={p.name} onChange={(e) => {
@@ -2009,8 +2174,37 @@ export default function App() {
                 </div>
               </div>
 
-              <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '1rem' }}>
-                Proceed to Payment Gateway (₹{grandTotal}) ➔
+              <div className="form-row">
+              <div className="form-group">
+                <label>Boarding Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Guntakal Bus Stand (21:00), Railway Station (21:15)"
+                  value={newBusForm.boardingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, boardingPointsText: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Dropping Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Miyapur (05:30), KPHB (05:45), Lakdikapul (06:15)"
+                  value={newBusForm.droppingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, droppingPointsText: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Route / Via Stops Where Bus Goes (comma-separated)</label>
+              <input
+                type="text"
+                placeholder="e.g. Anantapur, Kurnool, Jadcherla"
+                value={newBusForm.viaStopsText || ''}
+                onChange={(e) => setNewBusForm({ ...newBusForm, viaStopsText: e.target.value })}
+              />
+            </div>
+            <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '1rem' }}>
+                Proceed to Payment Gateway (â‚¹{grandTotal}) âž”
               </button>
             </form>
           </div>
@@ -2022,29 +2216,29 @@ export default function App() {
         <div className="modal-backdrop no-print">
           <div className="modal-box payment-gateway-modal">
             <div className="modal-header">
-              <h3>🔒 ANHAR Secure Payments</h3>
-              <button type="button" className="close-btn" onClick={() => setShowPaymentModal(false)}>✕</button>
+              <h3>ðŸ”’ ANHAR Secure Payments</h3>
+              <button type="button" className="close-btn" onClick={() => setShowPaymentModal(false)}>âœ•</button>
             </div>
 
             <div className="payment-breakdown-card" style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
                 <span>Base Fare ({selectedSeats.length} Seats)</span>
-                <span>₹{totalCalculatedFare}</span>
+                <span>â‚¹{totalCalculatedFare}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
                 <span>GST (5%)</span>
-                <span>₹{gstAmount}</span>
+                <span>â‚¹{gstAmount}</span>
               </div>
               {useWalletOffset && walletDeductionPossible > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a', fontWeight: 'bold' }}>
                   <span>ANHAR Wallet Applied</span>
-                  <span>- ₹{walletDeductionPossible}</span>
+                  <span>- â‚¹{walletDeductionPossible}</span>
                 </div>
               )}
               <hr style={{ margin: '0.6rem 0', borderColor: '#e2e8f0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', fontWeight: 'bold' }}>
                 <span>Net Payable</span>
-                <span>₹{finalPayableAfterWallet}</span>
+                <span>â‚¹{finalPayableAfterWallet}</span>
               </div>
             </div>
 
@@ -2063,7 +2257,7 @@ export default function App() {
                 onClick={() => setUseWalletOffset(!useWalletOffset)}
               >
                 <input type="checkbox" checked={useWalletOffset} readOnly />
-                <span>Use ANHAR Wallet Balance (Available: ₹{walletBalance})</span>
+                <span>Use ANHAR Wallet Balance (Available: â‚¹{walletBalance})</span>
               </div>
             )}
 
@@ -2082,8 +2276,8 @@ export default function App() {
               {isProcessingPayment
                 ? 'Opening Secure Checkout...'
                 : finalPayableAfterWallet === 0
-                  ? 'Confirm Booking with ANHAR Wallet ➔'
-                  : `Pay ₹{finalPayableAfterWallet} via UPI / Card ➔`}
+                  ? 'Confirm Booking with ANHAR Wallet âž”'
+                  : `Pay â‚¹{finalPayableAfterWallet} via UPI / Card âž”`}
             </button>
           </div>
         </div>
@@ -2094,13 +2288,13 @@ export default function App() {
         <div className="modal-backdrop printable-modal-backdrop">
           <div className="modal-box printable-ticket-wrapper" style={{ maxWidth: '650px' }}>
             <div className="ticket-actions-bar no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <button className="confirm-btn" onClick={() => window.print()}>🖨️ Print / Save PDF</button>
-              <button className="close-btn" onClick={() => setViewTicket(null)}>✕ Close</button>
+              <button className="confirm-btn" onClick={() => window.print()}>ðŸ–¨ï¸ Print / Save PDF</button>
+              <button className="close-btn" onClick={() => setViewTicket(null)}>âœ• Close</button>
             </div>
             <div className="boarding-pass" style={{ border: '2px solid #0f172a', padding: '1.2rem', borderRadius: '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.8rem' }}>
                 <div>
-                  <h2>🚌 ANHAR BUS</h2>
+                  <h2>ðŸšŒ ANHAR BUS</h2>
                   <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Official E-Ticket & Boarding Pass</p>
                 </div>
                 <img
@@ -2152,8 +2346,8 @@ export default function App() {
         <div className="modal-backdrop no-print">
           <div className="modal-box" style={{ maxWidth: '440px' }}>
             <div className="modal-header">
-              <h3>⚡ Quick-Sale Resale Listing</h3>
-              <button type="button" className="close-btn" onClick={() => setResellingBooking(null)}>✕</button>
+              <h3>âš¡ Quick-Sale Resale Listing</h3>
+              <button type="button" className="close-btn" onClick={() => setResellingBooking(null)}>âœ•</button>
             </div>
             <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1rem' }}>
               Select the seats from booking <strong>{resellingBooking.pnr}</strong> you wish to list on the public marketplace.
@@ -2173,7 +2367,7 @@ export default function App() {
             </div>
 
             <div className="form-group">
-              <label>Markup / Discount Adjust (₹)</label>
+              <label>Markup / Discount Adjust (â‚¹)</label>
               <input
                 type="number"
                 value={resaleMarkup}
@@ -2189,7 +2383,7 @@ export default function App() {
               disabled={seatsToResell.length === 0 || isSubmittingResale}
               onClick={confirmResaleListing}
             >
-              {isSubmittingResale ? 'Publishing...' : `Publish ${seatsToResell.length} Seat(s) to Market ➔`}
+              {isSubmittingResale ? 'Publishing...' : `Publish ${seatsToResell.length} Seat(s) to Market âž”`}
             </button>
           </div>
         </div>
@@ -2200,13 +2394,13 @@ export default function App() {
         <div className="modal-backdrop no-print">
           <div className="modal-box" style={{ maxWidth: '420px' }}>
             <div className="modal-header">
-              <h3>⚡ Instant Resale Purchase</h3>
-              <button type="button" className="close-btn" onClick={() => setSelectedResaleItem(null)}>✕</button>
+              <h3>âš¡ Instant Resale Purchase</h3>
+              <button type="button" className="close-btn" onClick={() => setSelectedResaleItem(null)}>âœ•</button>
             </div>
             <div style={{ background: '#f8fafc', padding: '0.8rem', borderRadius: '8px', marginBottom: '1rem' }}>
               <p><strong>Bus:</strong> {selectedResaleItem.busName}</p>
-              <p><strong>Seat:</strong> {selectedResaleItem.seatNumber} | <strong>Price:</strong> ₹{selectedResaleItem.resalePrice}</p>
-              <p style={{ fontSize: '0.85rem', color: '#64748b' }}>📍 {selectedResaleItem.boarding} ➔ {selectedResaleItem.dropping}</p>
+              <p><strong>Seat:</strong> {selectedResaleItem.seatNumber} | <strong>Price:</strong> â‚¹{selectedResaleItem.resalePrice}</p>
+              <p style={{ fontSize: '0.85rem', color: '#64748b' }}>ðŸ“ {selectedResaleItem.boarding} âž” {selectedResaleItem.dropping}</p>
             </div>
 
             <form onSubmit={handleResalePurchaseSubmit}>
@@ -2253,8 +2447,37 @@ export default function App() {
                   onChange={(e) => setBuyerDetails({ ...buyerDetails, phone: e.target.value })}
                 />
               </div>
-              <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }} disabled={isProcessingPayment}>
-                {isProcessingPayment ? 'Opening Checkout...' : `Pay ₹${selectedResaleItem.resalePrice} & Grab Seat ➔`}
+              <div className="form-row">
+              <div className="form-group">
+                <label>Boarding Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Guntakal Bus Stand (21:00), Railway Station (21:15)"
+                  value={newBusForm.boardingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, boardingPointsText: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Dropping Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Miyapur (05:30), KPHB (05:45), Lakdikapul (06:15)"
+                  value={newBusForm.droppingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, droppingPointsText: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Route / Via Stops Where Bus Goes (comma-separated)</label>
+              <input
+                type="text"
+                placeholder="e.g. Anantapur, Kurnool, Jadcherla"
+                value={newBusForm.viaStopsText || ''}
+                onChange={(e) => setNewBusForm({ ...newBusForm, viaStopsText: e.target.value })}
+              />
+            </div>
+            <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }} disabled={isProcessingPayment}>
+                {isProcessingPayment ? 'Opening Checkout...' : `Pay â‚¹${selectedResaleItem.resalePrice} & Grab Seat âž”`}
               </button>
             </form>
           </div>
@@ -2283,8 +2506,37 @@ export default function App() {
                   <label>Mobile Number (For SMS OTP)</label>
                   <input type="tel" required maxLength="10" placeholder="10-digit mobile" value={loginForm.phone} onChange={(e) => setLoginForm({ ...loginForm, phone: e.target.value })} />
                 </div>
-                <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }} disabled={isSendingOtp}>
-                  {isSendingOtp ? 'Sending OTP...' : 'Send OTP via SMS ➔'}
+                <div className="form-row">
+              <div className="form-group">
+                <label>Boarding Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Guntakal Bus Stand (21:00), Railway Station (21:15)"
+                  value={newBusForm.boardingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, boardingPointsText: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Dropping Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Miyapur (05:30), KPHB (05:45), Lakdikapul (06:15)"
+                  value={newBusForm.droppingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, droppingPointsText: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Route / Via Stops Where Bus Goes (comma-separated)</label>
+              <input
+                type="text"
+                placeholder="e.g. Anantapur, Kurnool, Jadcherla"
+                value={newBusForm.viaStopsText || ''}
+                onChange={(e) => setNewBusForm({ ...newBusForm, viaStopsText: e.target.value })}
+              />
+            </div>
+            <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }} disabled={isSendingOtp}>
+                  {isSendingOtp ? 'Sending OTP...' : 'Send OTP via SMS âž”'}
                 </button>
               </form>
             ) : (
@@ -2298,14 +2550,43 @@ export default function App() {
                     type="text"
                     required
                     maxLength="4"
-                    placeholder="••••"
+                    placeholder="â€¢â€¢â€¢â€¢"
                     value={otpInput}
                     onChange={(e) => setOtpInput(e.target.value)}
                     style={{ textAlign: 'center', fontSize: '1.4rem', letterSpacing: '0.3rem' }}
                   />
                 </div>
-                <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }} disabled={isVerifyingOtp}>
-                  {isVerifyingOtp ? 'Verifying...' : 'Verify & Continue ➔'}
+                <div className="form-row">
+              <div className="form-group">
+                <label>Boarding Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Guntakal Bus Stand (21:00), Railway Station (21:15)"
+                  value={newBusForm.boardingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, boardingPointsText: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Dropping Points (comma-separated, optional time in brackets)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Miyapur (05:30), KPHB (05:45), Lakdikapul (06:15)"
+                  value={newBusForm.droppingPointsText || ''}
+                  onChange={(e) => setNewBusForm({ ...newBusForm, droppingPointsText: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Route / Via Stops Where Bus Goes (comma-separated)</label>
+              <input
+                type="text"
+                placeholder="e.g. Anantapur, Kurnool, Jadcherla"
+                value={newBusForm.viaStopsText || ''}
+                onChange={(e) => setNewBusForm({ ...newBusForm, viaStopsText: e.target.value })}
+              />
+            </div>
+            <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }} disabled={isVerifyingOtp}>
+                  {isVerifyingOtp ? 'Verifying...' : 'Verify & Continue âž”'}
                 </button>
               </form>
             )}
