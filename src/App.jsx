@@ -27,6 +27,18 @@ const CITY_POINTS = {
   ]
 }
 
+// Helper to dynamically load Razorpay Checkout SDK
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true)
+    const script = document.createElement('script')
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+    script.onload = () => resolve(true)
+    script.onerror = () => resolve(false)
+    document.body.appendChild(script)
+  })
+}
+
 // Helper to build starter fallback seats cleanly
 const generateFallbackSeats = (layoutType, lowerCount, upperCount, leftP, rightP, upperP, backP) => {
   const seats = []
@@ -152,7 +164,6 @@ const DEFAULT_STARTER_FLEET = [
   }
 ]
 
-// Steering Wheel SVG Icon
 const SteeringWheelIcon = () => (
   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="9" />
@@ -163,7 +174,6 @@ const SteeringWheelIcon = () => (
   </svg>
 )
 
-// Female Silhouette SVG for Ladies Sold Seats
 const FemaleBadgeIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="#f472b6">
     <circle cx="12" cy="5.5" r="2.5" />
@@ -218,7 +228,7 @@ export default function App() {
   const [isLoadingManifest, setIsLoadingManifest] = useState(false)
   const [showAddBusModal, setShowAddBusModal] = useState(false)
 
-  // Enhanced Add Bus Form State (AC/Non-AC + Dynamic Berth/Seat Counts)
+  // Add Bus Form State
   const [newBusForm, setNewBusForm] = useState({
     name: '',
     busNumber: '',
@@ -256,8 +266,8 @@ export default function App() {
   })
 
   const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('upi')
   const [useWalletOffset, setUseWalletOffset] = useState(false)
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
 
   // Bookings & Resale
   const [myBookings, setMyBookings] = useState([])
@@ -374,7 +384,6 @@ export default function App() {
     return myBookings.filter(b => b.contact?.phone === currentUser)
   }, [myBookings, currentUser])
 
-  // Returns booked passenger info (including gender for pink ladies indicator)
   const getSeatBookingInfo = (seatNum, busId) => {
     for (const b of myBookings) {
       if (
@@ -450,23 +459,89 @@ export default function App() {
     setShowPaymentModal(true)
   }
 
-  const handlePaymentSuccess = async () => {
-    const newPnr = 'ANH' + Math.floor(100000 + Math.random() * 900000)
-    let deduction = 0
-    let remainingToPay = grandTotal
+  // Core Razorpay Checkout Launcher
+  const triggerRazorpayPayment = async ({ amountRupees, description, prefillName, prefillEmail, prefillPhone, onSuccess }) => {
+    const orderRes = await api.createPaymentOrder(amountRupees)
+    if (!orderRes || !orderRes.success) {
+      throw new Error(orderRes?.message || 'Unable to start payment gateway.')
+    }
 
-    if (useWalletOffset && walletBalance > 0) {
-      deduction = walletDeductionPossible
-      try {
-        await api.updateWallet(currentUser, -deduction)
-        setWalletBalance(prev => prev - deduction)
-      } catch (err) {
-        console.error('Wallet deduction error:', err)
+    // If backend is in Demo Mode (keys not added yet), complete immediately
+    if (orderRes.demoMode) {
+      const verifyRes = await api.verifyPayment({ demoMode: true })
+      if (verifyRes && verifyRes.success) {
+        await onSuccess(verifyRes.paymentId)
       }
-      remainingToPay -= deduction
+      return
+    }
+
+    const sdkLoaded = await loadRazorpayScript()
+    if (!sdkLoaded) {
+      throw new Error('Failed to load Razorpay SDK. Check your internet connection.')
+    }
+
+    return new Promise((resolve, reject) => {
+      const options = {
+        key: orderRes.keyId,
+        amount: orderRes.amount,
+        currency: orderRes.currency || 'INR',
+        name: 'ANHAR BUS',
+        description,
+        order_id: orderRes.orderId,
+        prefill: {
+          name: prefillName || 'Passenger',
+          email: prefillEmail || '',
+          contact: prefillPhone ? `+91${prefillPhone}` : ''
+        },
+        theme: { color: '#0284c7' },
+        handler: async function (response) {
+          try {
+            const verifyRes = await api.verifyPayment({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature
+            })
+            if (verifyRes && verifyRes.success) {
+              await onSuccess(verifyRes.paymentId)
+              resolve(true)
+            } else {
+              reject(new Error(verifyRes?.message || 'Payment verification failed.'))
+            }
+          } catch (err) {
+            reject(err)
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            reject(new Error('Payment cancelled by user.'))
+          }
+        }
+      }
+
+      const rzp = new window.Razorpay(options)
+      rzp.on('payment.failed', function (response) {
+        reject(new Error(response.error?.description || 'Payment failed.'))
+      })
+      rzp.open()
+    })
+  }
+
+  // Finalize booking after Razorpay / Wallet verification
+  const completeBookingRecord = async (paymentId, deduction, remainingPaid) => {
+    const newPnr = 'ANH' + Math.floor(100000 + Math.random() * 900000)
+
+    if (deduction > 0 && currentUser) {
+      await api.updateWallet(currentUser, -deduction)
+      setWalletBalance(prev => Math.max(0, prev - deduction))
     }
 
     const cleanContactPhone = String(contactInfo.phone || currentUser || '').replace(/\D/g, '').slice(-10)
+
+    const paymentLabel = deduction > 0 && remainingPaid === 0
+      ? 'ANHAR WALLET'
+      : deduction > 0
+        ? `WALLET (₹${deduction}) + RAZORPAY (${paymentId})`
+        : `RAZORPAY (${paymentId})`
 
     const newBooking = {
       pnr: newPnr,
@@ -489,11 +564,7 @@ export default function App() {
       gstAmount: gstAmount,
       totalPaid: grandTotal,
       walletDeducted: deduction,
-      paymentMethod: deduction > 0 && remainingToPay === 0
-        ? 'ANHAR WALLET'
-        : deduction > 0
-          ? `WALLET (₹${deduction}) + ${paymentMethod.toUpperCase()}`
-          : paymentMethod.toUpperCase(),
+      paymentMethod: paymentLabel,
       status: 'CONFIRMED'
     }
 
@@ -504,8 +575,40 @@ export default function App() {
     setSelectedSeats([])
     setSelectedBus(null)
     setUseWalletOffset(false)
-    alert(`Payment Successful! Confirmed Ticket PNR: ${newPnr}`)
+    alert(`Payment Verified! Confirmed Ticket PNR: ${newPnr}`)
     setActiveTab('my-bookings')
+  }
+
+  const handlePayNowClick = async () => {
+    if (isProcessingPayment) return
+    setIsProcessingPayment(true)
+    const deduction = useWalletOffset && walletBalance > 0 ? walletDeductionPossible : 0
+    const remainingToPay = Math.max(0, grandTotal - deduction)
+
+    try {
+      if (remainingToPay === 0) {
+        // 100% covered by ANHAR Wallet
+        await completeBookingRecord('WALLET_ONLY', deduction, 0)
+      } else {
+        // Charge remaining amount via Real Razorpay Gateway
+        await triggerRazorpayPayment({
+          amountRupees: remainingToPay,
+          description: `${selectedBus.name} (${source} → ${destination})`,
+          prefillName: passengerDetails[0]?.name || currentUserName,
+          prefillEmail: contactInfo.email || currentUserEmail,
+          prefillPhone: contactInfo.phone || currentUser,
+          onSuccess: async (paymentId) => {
+            await completeBookingRecord(paymentId, deduction, remainingToPay)
+          }
+        })
+      }
+    } catch (err) {
+      if (err.message !== 'Payment cancelled by user.') {
+        alert(err.message || 'Payment failed.')
+      }
+    } finally {
+      setIsProcessingPayment(false)
+    }
   }
 
   const handleCancelBooking = async (b) => {
@@ -607,48 +710,69 @@ export default function App() {
 
   const handleResalePurchaseSubmit = async (e) => {
     e.preventDefault()
+    if (isProcessingPayment) return
+    setIsProcessingPayment(true)
+
     const cleanBuyerPhone = String(buyerDetails.phone).replace(/\D/g, '').slice(-10)
-    const newBuyerPnr = 'RES-ANH' + Math.floor(100000 + Math.random() * 900000)
 
-    const newBuyerBooking = {
-      pnr: newBuyerPnr,
-      busId: selectedResaleItem.busId,
-      busName: selectedResaleItem.busName,
-      busNumber: selectedResaleItem.busNumber || 'AP 04 TX 9924',
-      route: selectedResaleItem.route,
-      departure: selectedResaleItem.time,
-      arrival: 'Next Morning',
-      journeyDate: selectedResaleItem.date,
-      boarding: selectedResaleItem.boarding,
-      dropping: selectedResaleItem.dropping,
-      unitPrice: selectedResaleItem.resalePrice,
-      passengers: [{
-        seatNumber: selectedResaleItem.seatNumber,
-        name: buyerDetails.name,
-        age: Number(buyerDetails.age),
-        gender: buyerDetails.gender
-      }],
-      contact: { phone: cleanBuyerPhone, email: buyerDetails.email },
-      sellerPnr: selectedResaleItem.sellerPnr,
-      sellerPhone: selectedResaleItem.sellerPhone,
-      baseFare: selectedResaleItem.resalePrice,
-      totalPaid: selectedResaleItem.resalePrice,
-      paymentMethod: 'UPI / INSTANT',
-      status: 'VERIFIED_RESALE_TICKET'
-    }
+    try {
+      await triggerRazorpayPayment({
+        amountRupees: Number(selectedResaleItem.resalePrice),
+        description: `Resale Seat ${selectedResaleItem.seatNumber} - ${selectedResaleItem.busName}`,
+        prefillName: buyerDetails.name,
+        prefillEmail: buyerDetails.email,
+        prefillPhone: cleanBuyerPhone,
+        onSuccess: async (paymentId) => {
+          const newBuyerPnr = 'RES-ANH' + Math.floor(100000 + Math.random() * 900000)
 
-    const res = await api.buyResale(selectedResaleItem.id, newBuyerBooking)
-    if (res.success) {
-      if (cleanBuyerPhone) {
-        localStorage.setItem('anhar_user_phone', cleanBuyerPhone)
-        setCurrentUser(cleanBuyerPhone)
+          const newBuyerBooking = {
+            pnr: newBuyerPnr,
+            busId: selectedResaleItem.busId,
+            busName: selectedResaleItem.busName,
+            busNumber: selectedResaleItem.busNumber || 'AP 04 TX 9924',
+            route: selectedResaleItem.route,
+            departure: selectedResaleItem.time,
+            arrival: 'Next Morning',
+            journeyDate: selectedResaleItem.date,
+            boarding: selectedResaleItem.boarding,
+            dropping: selectedResaleItem.dropping,
+            unitPrice: selectedResaleItem.resalePrice,
+            passengers: [{
+              seatNumber: selectedResaleItem.seatNumber,
+              name: buyerDetails.name,
+              age: Number(buyerDetails.age),
+              gender: buyerDetails.gender
+            }],
+            contact: { phone: cleanBuyerPhone, email: buyerDetails.email },
+            sellerPnr: selectedResaleItem.sellerPnr,
+            sellerPhone: selectedResaleItem.sellerPhone,
+            baseFare: selectedResaleItem.resalePrice,
+            totalPaid: selectedResaleItem.resalePrice,
+            paymentMethod: `RAZORPAY (${paymentId})`,
+            status: 'VERIFIED_RESALE_TICKET'
+          }
+
+          const res = await api.buyResale(selectedResaleItem.id, newBuyerBooking)
+          if (res.success) {
+            if (cleanBuyerPhone) {
+              localStorage.setItem('anhar_user_phone', cleanBuyerPhone)
+              setCurrentUser(cleanBuyerPhone)
+            }
+            await fetchLatestData()
+            setSelectedResaleItem(null)
+            alert(`Ticket confirmed: PNR ${newBuyerPnr}`)
+            setActiveTab('my-bookings')
+          } else {
+            alert(res.message || 'Failed to complete purchase.')
+          }
+        }
+      })
+    } catch (err) {
+      if (err.message !== 'Payment cancelled by user.') {
+        alert(err.message || 'Resale payment failed.')
       }
-      await fetchLatestData()
-      setSelectedResaleItem(null)
-      alert(`Ticket confirmed: PNR ${newBuyerPnr}`)
-      setActiveTab('my-bookings')
-    } else {
-      alert(res.message || 'Failed to complete purchase.')
+    } finally {
+      setIsProcessingPayment(false)
     }
   }
 
@@ -744,7 +868,7 @@ export default function App() {
   const handleRemoveBus = async (bus) => {
     const busId = bus._id || bus.id
     if (String(busId).startsWith('default-bus-')) {
-      alert('This is a built-in starter template. You can add and delete real buses from "+ Add Bus & Configure Pricing".')
+      alert('This is a built-in starter template. You can add and delete real buses from "+ Add Bus & Configure Capacity".')
       return
     }
 
@@ -838,20 +962,34 @@ export default function App() {
     setDestination(temp)
   }
 
+  // Wallet Top-Up via Real Razorpay Checkout
   const addFundsToWallet = async () => {
     if (!currentUser) return setShowLoginModal(true)
     const amount = Number(prompt('Enter amount to add to ANHAR Wallet (₹):', '500'))
     if (amount > 0) {
       try {
-        const res = await api.updateWallet(currentUser, amount)
-        if (res && res.success) setWalletBalance(res.balance)
+        await triggerRazorpayPayment({
+          amountRupees: amount,
+          description: 'ANHAR Wallet Top-Up',
+          prefillName: currentUserName,
+          prefillEmail: currentUserEmail,
+          prefillPhone: currentUser,
+          onSuccess: async () => {
+            const res = await api.updateWallet(currentUser, amount)
+            if (res && res.success) {
+              setWalletBalance(res.balance)
+              alert(`₹${amount} added to your ANHAR Wallet!`)
+            }
+          }
+        })
       } catch (err) {
-        alert('Failed to update wallet.')
+        if (err.message !== 'Payment cancelled by user.') {
+          alert(err.message || 'Wallet top-up failed.')
+        }
       }
     }
   }
 
-  // Renders individual berth or pushback seat unit in realistic bus shell
   const renderCabinUnit = (seat, bus, busKey) => {
     if (!seat) return <div className="cabin-unit-placeholder" />
 
@@ -895,7 +1033,6 @@ export default function App() {
     )
   }
 
-  // Renders a full Deck Shell (Lower Deck / Upper Deck / Single Deck)
   const renderDeckShell = (deckSeats, title, showSteering, isSingleDeck, bus, busKey) => {
     if (!deckSeats || deckSeats.length === 0) return null
 
@@ -922,7 +1059,6 @@ export default function App() {
             <div key={rIdx} className="chassis-row">
               {isSingleDeck ? (
                 <>
-                  {/* 2+2 Single Deck Seater */}
                   <div className="chassis-left-pair">
                     {renderCabinUnit(rowSeats[0], bus, busKey)}
                     {renderCabinUnit(rowSeats[1], bus, busKey)}
@@ -935,7 +1071,6 @@ export default function App() {
                 </>
               ) : (
                 <>
-                  {/* 2+1 Sleeper / Mixed Deck */}
                   <div className="chassis-left-single">
                     {renderCabinUnit(rowSeats[0], bus, busKey)}
                   </div>
@@ -977,7 +1112,7 @@ export default function App() {
             <button className={`nav-btn ${activeTab === 'operator' ? 'active' : ''}`} onClick={() => isOperatorAuthorized ? setActiveTab('operator') : setShowPinModal(true)}>
               🔒 Operator Portal
             </button>
-            <div className="wallet-chip" onClick={addFundsToWallet} title="Click to Top-Up Wallet">
+            <div className="wallet-chip" onClick={addFundsToWallet} title="Click to Top-Up Wallet via Razorpay">
               💰 Wallet: <strong>₹{walletBalance}</strong> <span className="wallet-plus">+</span>
             </div>
             {currentUser ? (
@@ -1049,7 +1184,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Filter Bar (Coach Type + AC / Non-AC + Departure Slot) */}
+            {/* Filter Bar */}
             <div className="filters-strip">
               <div className="filter-group">
                 <span className="filter-title">Coach Type:</span>
@@ -1113,7 +1248,6 @@ export default function App() {
                 const upperSeats = isSingleDeck ? [] : allSeats.filter(s => s.deck === 'UPPER')
                 const isAc = (bus.acType || 'AC') === 'AC'
 
-                // Count available seats
                 const bookedCount = allSeats.filter(s => Boolean(getSeatBookingInfo(s.seatNumber, busKey))).length
                 const availableCount = Math.max(0, allSeats.length - bookedCount)
 
@@ -1192,7 +1326,6 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* SIDE-BY-SIDE DECKS */}
                         <div className={`decks-side-by-side ${isSingleDeck ? 'single-deck-center' : ''}`}>
                           {isSingleDeck ? (
                             renderDeckShell(
@@ -1617,7 +1750,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD BUS MODAL WITH COACH TYPE, AC/NON-AC & EXACT BERTH/SEAT CAPACITY */}
+      {/* ADD BUS MODAL */}
       {showAddBusModal && (
         <div className="modal-backdrop no-print">
           <div className="modal-box large-modal">
@@ -1650,7 +1783,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* COACH TYPE & AC / NON-AC SELECTOR */}
               <div className="form-row">
                 <div className="form-group flex-2">
                   <label>Coach Layout Category</label>
@@ -1686,7 +1818,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* DYNAMIC BERTH / SEAT COUNT INPUTS BASED ON COACH TYPE */}
               <div className="capacity-config-box">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
                   <strong>
@@ -1789,7 +1920,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* SPECIFIC SEAT-WISE PRICING CONTROLS */}
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '0.4rem' }}>
                 <h4 style={{ marginBottom: '0.8rem' }}>Tiered Seat / Berth Price Customization (₹)</h4>
                 <div className="form-row">
@@ -1887,7 +2017,7 @@ export default function App() {
         </div>
       )}
 
-      {/* PAYMENT GATEWAY MODAL */}
+      {/* REAL RAZORPAY PAYMENT GATEWAY MODAL */}
       {showPaymentModal && (
         <div className="modal-backdrop no-print">
           <div className="modal-box payment-gateway-modal">
@@ -1938,40 +2068,22 @@ export default function App() {
             )}
 
             {finalPayableAfterWallet > 0 && (
-              <>
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                  <button
-                    type="button"
-                    className={`pill-btn ${paymentMethod === 'upi' ? 'active' : ''}`}
-                    onClick={() => setPaymentMethod('upi')}
-                    style={{ flex: 1 }}
-                  >
-                    UPI Apps / QR
-                  </button>
-                  <button
-                    type="button"
-                    className={`pill-btn ${paymentMethod === 'card' ? 'active' : ''}`}
-                    onClick={() => setPaymentMethod('card')}
-                    style={{ flex: 1 }}
-                  >
-                    Card
-                  </button>
-                </div>
-
-                {paymentMethod === 'upi' && (
-                  <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=upi://pay?pa=anharbus@icici&pn=ANHARBUS&am=${finalPayableAfterWallet}&cu=INR`}
-                      alt="UPI QR Code"
-                    />
-                    <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.5rem' }}>Scan with GPay, PhonePe, or Paytm</p>
-                  </div>
-                )}
-              </>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.85rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', color: '#166534' }}>
+                <strong>Powered by Razorpay:</strong> Supports GPay, PhonePe, Paytm UPI, QR Code, Credit/Debit Cards & NetBanking.
+              </div>
             )}
 
-            <button className="confirm-btn pay-now-btn" style={{ width: '100%', marginTop: '0.8rem' }} onClick={handlePaymentSuccess}>
-              Pay ₹{finalPayableAfterWallet} & Confirm Booking
+            <button
+              className="confirm-btn pay-now-btn"
+              style={{ width: '100%', marginTop: '0.4rem' }}
+              disabled={isProcessingPayment}
+              onClick={handlePayNowClick}
+            >
+              {isProcessingPayment
+                ? 'Opening Secure Checkout...'
+                : finalPayableAfterWallet === 0
+                  ? 'Confirm Booking with ANHAR Wallet ➔'
+                  : `Pay ₹{finalPayableAfterWallet} via UPI / Card ➔`}
             </button>
           </div>
         </div>
@@ -2141,8 +2253,8 @@ export default function App() {
                   onChange={(e) => setBuyerDetails({ ...buyerDetails, phone: e.target.value })}
                 />
               </div>
-              <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }}>
-                Pay ₹{selectedResaleItem.resalePrice} & Grab Seat ➔
+              <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }} disabled={isProcessingPayment}>
+                {isProcessingPayment ? 'Opening Checkout...' : `Pay ₹${selectedResaleItem.resalePrice} & Grab Seat ➔`}
               </button>
             </form>
           </div>

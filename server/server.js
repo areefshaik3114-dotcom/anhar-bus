@@ -1,7 +1,15 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const crypto = require('crypto');
 require('dotenv').config();
+
+let Razorpay = null;
+try {
+  Razorpay = require('razorpay');
+} catch (e) {
+  console.warn('Razorpay package not installed yet. Run: npm install razorpay');
+}
 
 const Booking = require('./models/Booking');
 const ResaleListing = require('./models/ResaleListing');
@@ -38,6 +46,17 @@ app.use(
 
 app.use(express.json());
 
+// Initialize Razorpay instance if keys are configured
+const getRazorpayInstance = () => {
+  if (!Razorpay || !process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+    return null;
+  }
+  return new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+};
+
 // Reusable Fast2SMS Quick Route Helper
 const sendQuickSms = async (phone, message) => {
   const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
@@ -69,7 +88,7 @@ const sendQuickSms = async (phone, message) => {
   }
 };
 
-// Dynamic Seat & Berth Generator (Supports custom counts, AC/Non-AC, 2+1 & 2+2 layouts)
+// Dynamic Seat & Berth Generator
 const buildDynamicSeats = (layoutType, p) => {
   const seats = [];
   const base = Number(p.basePrice || 600);
@@ -84,7 +103,6 @@ const buildDynamicSeats = (layoutType, p) => {
     const upperCount = Number(p.upperCount || (totalRequested - lowerCount));
     const lowerType = layoutType === 'ALL_SLEEPER' ? 'SLEEPER' : 'PUSHBACK';
 
-    // 2+1 Deck Grid (3 columns per row: Col 1 = Left Single, Col 2 & 3 = Right Double)
     const lowerRows = Math.ceil(lowerCount / 3);
     for (let i = 1; i <= lowerCount; i++) {
       const row = Math.ceil(i / 3);
@@ -124,7 +142,6 @@ const buildDynamicSeats = (layoutType, p) => {
       });
     }
   } else {
-    // SINGLE DECK: PUSHBACK_ONLY or SEATER_ONLY (2+2 Layout: 4 seats per row)
     const seatType = layoutType === 'PUSHBACK_ONLY' ? 'PUSHBACK' : 'SEATER';
     const totalCount = Number(p.totalSeats || 32);
     const totalRows = Math.ceil(totalCount / 4);
@@ -350,6 +367,85 @@ mongoose
   .catch((err) => console.error('MongoDB Connection Error:', err.message));
 
 app.get('/', (req, res) => res.send('ANHAR BUS Backend Server is live!'));
+
+// ==========================================
+// --- RAZORPAY REAL PAYMENT GATEWAY ---
+// ==========================================
+
+// 1. Create Razorpay Order
+app.post('/api/payments/create-order', async (req, res) => {
+  try {
+    const amountInRupees = Number(req.body.amount);
+    if (!amountInRupees || amountInRupees <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid payment amount.' });
+    }
+
+    const rzp = getRazorpayInstance();
+    if (!rzp) {
+      // Fallback if Razorpay API keys are not yet added in .env
+      return res.json({
+        success: true,
+        demoMode: true,
+        orderId: 'order_demo_' + Date.now(),
+        amount: Math.round(amountInRupees * 100),
+        currency: 'INR',
+        message: 'Razorpay keys not configured yet; running in Demo Mode.'
+      });
+    }
+
+    const options = {
+      amount: Math.round(amountInRupees * 100), // Razorpay expects paise (₹1 = 100 paise)
+      currency: 'INR',
+      receipt: `anhar_rcpt_${Date.now()}`
+    };
+
+    const order = await rzp.orders.create(options);
+    res.json({
+      success: true,
+      demoMode: false,
+      keyId: process.env.RAZORPAY_KEY_ID,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency
+    });
+  } catch (err) {
+    console.error('[Razorpay Create Order Error]:', err);
+    res.status(500).json({ success: false, message: err.message || 'Failed to initiate payment.' });
+  }
+});
+
+// 2. Verify Razorpay Payment Signature
+app.post('/api/payments/verify', async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, demoMode } = req.body;
+
+    if (demoMode || !process.env.RAZORPAY_KEY_SECRET) {
+      return res.json({
+        success: true,
+        verified: true,
+        paymentId: razorpay_payment_id || 'pay_demo_' + Date.now()
+      });
+    }
+
+    const generatedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+
+    if (generatedSignature !== razorpay_signature) {
+      return res.status(400).json({ success: false, message: 'Payment signature verification failed!' });
+    }
+
+    res.json({
+      success: true,
+      verified: true,
+      paymentId: razorpay_payment_id
+    });
+  } catch (err) {
+    console.error('[Razorpay Verify Error]:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 // ==========================================
 // --- OPERATOR STRICT ADMIN AUTH SYSTEM ---

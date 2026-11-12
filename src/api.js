@@ -4,6 +4,35 @@ const API_BASE = (typeof window !== 'undefined' && window.location.hostname === 
   : 'https://anhar-bus.onrender.com';
 
 export const api = {
+  // 0. Razorpay Real Payments
+  createPaymentOrder: async (amount) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/payments/create-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (createPaymentOrder):', err);
+      return { success: false, message: err.message };
+    }
+  },
+
+  verifyPayment: async (payload) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/payments/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('API Error (verifyPayment):', err);
+      return { success: false, message: err.message };
+    }
+  },
+
   // 1. Bookings Management
   getBookings: async () => {
     try {
