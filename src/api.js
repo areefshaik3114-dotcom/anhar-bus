@@ -1,7 +1,5 @@
-// Automatically switches between Localhost and Render
-const API_BASE = (typeof window !== 'undefined' && window.location.hostname === 'localhost')
-  ? 'http://localhost:5000'
-  : 'https://anhar-bus.onrender.com';
+﻿// Point directly to Render backend so both Vercel and the Android APK work
+const API_BASE = 'https://anhar-bus.onrender.com';
 
 export const api = {
   // 0. Razorpay Real Payments
