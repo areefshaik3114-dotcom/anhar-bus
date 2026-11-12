@@ -27,6 +27,61 @@ const CITY_POINTS = {
   ]
 }
 
+// Helper to build starter fallback seats cleanly
+const generateFallbackSeats = (layoutType, lowerCount, upperCount, leftP, rightP, upperP, backP) => {
+  const seats = []
+  if (layoutType === 'ALL_SLEEPER' || layoutType === 'MIXED_SEATER_SLEEPER') {
+    const lowerType = layoutType === 'ALL_SLEEPER' ? 'SLEEPER' : 'PUSHBACK'
+    const lRows = Math.ceil(lowerCount / 3)
+    for (let i = 1; i <= lowerCount; i++) {
+      const row = Math.ceil(i / 3)
+      const col = ((i - 1) % 3) + 1
+      seats.push({
+        seatNumber: i,
+        seatLabel: `L${i}`,
+        deck: 'LOWER',
+        row,
+        col,
+        side: col === 1 ? 'LEFT' : 'RIGHT',
+        type: lowerType,
+        price: row === lRows ? backP : (col === 1 ? leftP : rightP)
+      })
+    }
+    const uRows = Math.ceil(upperCount / 3)
+    for (let i = 1; i <= upperCount; i++) {
+      const row = Math.ceil(i / 3)
+      const col = ((i - 1) % 3) + 1
+      seats.push({
+        seatNumber: lowerCount + i,
+        seatLabel: `U${i}`,
+        deck: 'UPPER',
+        row,
+        col,
+        side: col === 1 ? 'LEFT' : 'RIGHT',
+        type: 'SLEEPER',
+        price: row === uRows ? Math.max(backP, upperP - 100) : upperP
+      })
+    }
+  } else {
+    const tRows = Math.ceil(lowerCount / 4)
+    for (let i = 1; i <= lowerCount; i++) {
+      const row = Math.ceil(i / 4)
+      const col = ((i - 1) % 4) + 1
+      seats.push({
+        seatNumber: i,
+        seatLabel: `S${i}`,
+        deck: 'SINGLE',
+        row,
+        col,
+        side: col <= 2 ? 'LEFT' : 'RIGHT',
+        type: 'PUSHBACK',
+        price: row === tRows ? backP : (col <= 2 ? leftP : rightP)
+      })
+    }
+  }
+  return seats
+}
+
 // Built-in starter fleet fallback
 const DEFAULT_STARTER_FLEET = [
   {
@@ -42,27 +97,14 @@ const DEFAULT_STARTER_FLEET = [
     arrival: '06:00',
     duration: '8h 30m',
     layoutType: 'MIXED_SEATER_SLEEPER',
-    category: 'Mixed Seater & Sleeper',
+    acType: 'AC',
+    category: 'AC Sleeper + Seater',
+    type: '2+1 AC Lower Seater + Upper Sleeper (30 Total)',
     price: 650,
     totalSeats: 30,
-    seats: [
-      ...Array.from({ length: 15 }, (_, i) => ({
-        seatNumber: i + 1,
-        seatLabel: `L${i + 1}`,
-        deck: 'LOWER',
-        side: [1, 4, 7, 10].includes(i + 1) ? 'LEFT' : 'RIGHT',
-        type: 'PUSHBACK',
-        price: [13, 14, 15].includes(i + 1) ? 590 : ([1, 4, 7, 10].includes(i + 1) ? 650 : 700)
-      })),
-      ...Array.from({ length: 15 }, (_, i) => ({
-        seatNumber: i + 16,
-        seatLabel: `U${i + 1}`,
-        deck: 'UPPER',
-        side: [16, 19, 22, 25].includes(i + 16) ? 'LEFT' : 'RIGHT',
-        type: 'SLEEPER',
-        price: [28, 29, 30].includes(i + 16) ? 750 : ([16, 19, 22, 25].includes(i + 16) ? 900 : 950)
-      }))
-    ]
+    lowerCount: 15,
+    upperCount: 15,
+    seats: generateFallbackSeats('MIXED_SEATER_SLEEPER', 15, 15, 650, 700, 950, 590)
   },
   {
     _id: 'default-bus-2',
@@ -77,27 +119,14 @@ const DEFAULT_STARTER_FLEET = [
     arrival: '06:45',
     duration: '8h 30m',
     layoutType: 'ALL_SLEEPER',
+    acType: 'AC',
     category: 'AC Sleeper',
+    type: '2+1 AC Sleeper (30 Berths)',
     price: 950,
     totalSeats: 30,
-    seats: [
-      ...Array.from({ length: 15 }, (_, i) => ({
-        seatNumber: i + 1,
-        seatLabel: `L${i + 1}`,
-        deck: 'LOWER',
-        side: [1, 4, 7, 10].includes(i + 1) ? 'LEFT' : 'RIGHT',
-        type: 'SLEEPER',
-        price: [13, 14, 15].includes(i + 1) ? 850 : ([1, 4, 7, 10].includes(i + 1) ? 950 : 1000)
-      })),
-      ...Array.from({ length: 15 }, (_, i) => ({
-        seatNumber: i + 16,
-        seatLabel: `U${i + 1}`,
-        deck: 'UPPER',
-        side: [16, 19, 22, 25].includes(i + 16) ? 'LEFT' : 'RIGHT',
-        type: 'SLEEPER',
-        price: [28, 29, 30].includes(i + 16) ? 900 : ([16, 19, 22, 25].includes(i + 16) ? 1100 : 1150)
-      }))
-    ]
+    lowerCount: 15,
+    upperCount: 15,
+    seats: generateFallbackSeats('ALL_SLEEPER', 15, 15, 950, 1000, 1000, 900)
   },
   {
     _id: 'default-bus-3',
@@ -112,19 +141,35 @@ const DEFAULT_STARTER_FLEET = [
     arrival: '14:30',
     duration: '7h 00m',
     layoutType: 'PUSHBACK_ONLY',
-    category: 'Pushback Seater',
-    price: 520,
-    totalSeats: 24,
-    seats: Array.from({ length: 24 }, (_, i) => ({
-      seatNumber: i + 1,
-      seatLabel: `S${i + 1}`,
-      deck: 'SINGLE',
-      side: [1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21].includes(i + 1) ? 'LEFT' : 'RIGHT',
-      type: 'PUSHBACK',
-      price: [21, 22, 23, 24].includes(i + 1) ? 480 : 520
-    }))
+    acType: 'NON_AC',
+    category: 'Non-AC Seater',
+    type: '2+2 Non-AC Pushback Seater (32 Seats)',
+    price: 480,
+    totalSeats: 32,
+    lowerCount: 32,
+    upperCount: 0,
+    seats: generateFallbackSeats('PUSHBACK_ONLY', 32, 0, 480, 500, 500, 450)
   }
 ]
+
+// Steering Wheel SVG Icon
+const SteeringWheelIcon = () => (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="2.5" />
+    <line x1="12" y1="3" x2="12" y2="9.5" />
+    <line x1="4.2" y1="16.5" x2="9.8" y2="13.2" />
+    <line x1="19.8" y1="16.5" x2="14.2" y2="13.2" />
+  </svg>
+)
+
+// Female Silhouette SVG for Ladies Sold Seats
+const FemaleBadgeIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="#f472b6">
+    <circle cx="12" cy="5.5" r="2.5" />
+    <path d="M12 9.5c-2.2 0-3.5 1.5-4 3.5l-1 4h2.5v4.5h5V17H17l-1-4c-.5-2-1.8-3.5-4-3.5z" />
+  </svg>
+)
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('book')
@@ -133,7 +178,6 @@ export default function App() {
   const [journeyDate, setJourneyDate] = useState(() => new Date().toISOString().split('T')[0])
   const [selectedBus, setSelectedBus] = useState(null)
   const [selectedSeats, setSelectedSeats] = useState([])
-  const [selectedDeckView, setSelectedDeckView] = useState('LOWER')
 
   // Pick-up and Drop selection
   const [selectedBoardingPoint, setSelectedBoardingPoint] = useState('')
@@ -155,10 +199,10 @@ export default function App() {
   // Wallet
   const [walletBalance, setWalletBalance] = useState(0)
 
-  // Operator Authentication State (Strict Fixed Admin Phone)
+  // Operator Authentication State
   const [isOperatorAuthorized, setIsOperatorAuthorized] = useState(() => sessionStorage.getItem('anhar_operator_auth') === 'true')
   const [showPinModal, setShowPinModal] = useState(false)
-  const [operatorAuthMode, setOperatorAuthMode] = useState('LOGIN') // 'LOGIN' | 'FIRST_TIME_OTP'
+  const [operatorAuthMode, setOperatorAuthMode] = useState('LOGIN')
   const [opLoginName, setOpLoginName] = useState('')
   const [opLoginPassword, setOpLoginPassword] = useState('')
   const [opRegisterName, setOpRegisterName] = useState('')
@@ -174,7 +218,7 @@ export default function App() {
   const [isLoadingManifest, setIsLoadingManifest] = useState(false)
   const [showAddBusModal, setShowAddBusModal] = useState(false)
 
-  // Add Bus Form State
+  // Enhanced Add Bus Form State (AC/Non-AC + Dynamic Berth/Seat Counts)
   const [newBusForm, setNewBusForm] = useState({
     name: '',
     busNumber: '',
@@ -185,17 +229,21 @@ export default function App() {
     departure: '21:30',
     departureHour: 21.5,
     arrival: '06:00',
-    layoutType: 'MIXED_SEATER_SLEEPER',
-    price: 650,
-    lowerLeftPrice: 650,
-    lowerRightPrice: 700,
-    upperLeftPrice: 900,
-    upperRightPrice: 950,
-    backPrice: 590
+    layoutType: 'ALL_SLEEPER',
+    acType: 'AC',
+    lowerCount: 15,
+    upperCount: 15,
+    totalSeats: 32,
+    price: 850,
+    lowerLeftPrice: 850,
+    lowerRightPrice: 900,
+    upperLeftPrice: 1000,
+    backPrice: 750
   })
 
   // Filter & Sort States
   const [selectedTypeFilter, setSelectedTypeFilter] = useState('ALL')
+  const [selectedAcFilter, setSelectedAcFilter] = useState('ALL')
   const [selectedTimeSlot, setSelectedTimeSlot] = useState('ALL')
   const [sortBy, setSortBy] = useState('PRICE_ASC')
 
@@ -222,7 +270,6 @@ export default function App() {
   const [selectedResaleItem, setSelectedResaleItem] = useState(null)
   const [buyerDetails, setBuyerDetails] = useState({ name: '', age: '', gender: 'Male', phone: '', email: '' })
 
-  // Refresh backend records
   const fetchLatestData = async () => {
     try {
       const [bookings, resale, buses] = await Promise.all([
@@ -243,7 +290,6 @@ export default function App() {
     }
   }
 
-  // Fetch operator fleet
   const fetchOperatorFleet = async () => {
     try {
       const operatorPhone = currentUser || '8977733885'
@@ -269,7 +315,6 @@ export default function App() {
     }
   }, [activeTab, isOperatorAuthorized])
 
-  // Sync user wallet from MongoDB
   useEffect(() => {
     const fetchWallet = async () => {
       if (currentUser) {
@@ -286,7 +331,6 @@ export default function App() {
     fetchWallet()
   }, [currentUser])
 
-  // Default Boarding/Dropping on Route change
   useEffect(() => {
     setSelectedSeats([])
     setSelectedBus(null)
@@ -298,13 +342,20 @@ export default function App() {
     return dbBuses.length > 0 ? dbBuses : DEFAULT_STARTER_FLEET
   }, [dbBuses])
 
-  // Filtered & Sorted Bus Fleet (Expired buses disappear automatically)
   const filteredAndSortedBuses = useMemo(() => {
     const now = new Date()
     return activeFleet
       .filter((bus) => {
         if (bus.departureDate && new Date(bus.departureDate) < now) return false
-        if (selectedTypeFilter !== 'ALL' && bus.category !== selectedTypeFilter) return false
+        if (selectedTypeFilter !== 'ALL') {
+          if (selectedTypeFilter === 'SLEEPER' && bus.layoutType !== 'ALL_SLEEPER') return false
+          if (selectedTypeFilter === 'MIXED' && bus.layoutType !== 'MIXED_SEATER_SLEEPER') return false
+          if (selectedTypeFilter === 'SEATER' && !['PUSHBACK_ONLY', 'SEATER_ONLY'].includes(bus.layoutType)) return false
+        }
+        if (selectedAcFilter !== 'ALL') {
+          const busAc = bus.acType || 'AC'
+          if (busAc !== selectedAcFilter) return false
+        }
         if (selectedTimeSlot === 'MORNING' && (bus.departureHour < 6 || bus.departureHour >= 12)) return false
         if (selectedTimeSlot === 'EVENING' && (bus.departureHour < 18 || bus.departureHour >= 23)) return false
         if (selectedTimeSlot === 'NIGHT' && bus.departureHour < 23) return false
@@ -314,23 +365,28 @@ export default function App() {
         if (sortBy === 'PRICE_ASC') return a.price - b.price
         if (sortBy === 'PRICE_DESC') return b.price - a.price
         if (sortBy === 'TIME_ASC') return a.departureHour - b.departureHour
-        if (sortBy === 'RATING_DESC') return 4.8 - 4.5
         return 0
       })
-  }, [activeFleet, selectedTypeFilter, selectedTimeSlot, sortBy])
+  }, [activeFleet, selectedTypeFilter, selectedAcFilter, selectedTimeSlot, sortBy])
 
   const userPersonalBookings = useMemo(() => {
     if (!currentUser) return []
     return myBookings.filter(b => b.contact?.phone === currentUser)
   }, [myBookings, currentUser])
 
-  const isSeatBooked = (seatNum, busId) => {
-    return myBookings.some(b => 
-      String(b.busId) === String(busId) && 
-      b.status !== 'ALL_RESOLD' && 
-      b.status !== 'CANCELLED' && 
-      (b.passengers || []).some(p => Number(p.seatNumber) === Number(seatNum))
-    )
+  // Returns booked passenger info (including gender for pink ladies indicator)
+  const getSeatBookingInfo = (seatNum, busId) => {
+    for (const b of myBookings) {
+      if (
+        String(b.busId) === String(busId) &&
+        b.status !== 'ALL_RESOLD' &&
+        b.status !== 'CANCELLED'
+      ) {
+        const pax = (b.passengers || []).find(p => Number(p.seatNumber) === Number(seatNum))
+        if (pax) return pax
+      }
+    }
+    return null
   }
 
   const handleSeatClick = (seatObj, bus) => {
@@ -360,11 +416,6 @@ export default function App() {
     } else {
       setSelectedBus(bus)
       setSelectedSeats([])
-      if (bus.layoutType === 'PUSHBACK_ONLY' || bus.layoutType === 'SEATER_ONLY') {
-        setSelectedDeckView('SINGLE')
-      } else {
-        setSelectedDeckView('LOWER')
-      }
     }
   }
 
@@ -438,10 +489,10 @@ export default function App() {
       gstAmount: gstAmount,
       totalPaid: grandTotal,
       walletDeducted: deduction,
-      paymentMethod: deduction > 0 && remainingToPay === 0 
-        ? 'ANHAR WALLET' 
-        : deduction > 0 
-          ? `WALLET (₹${deduction}) + ${paymentMethod.toUpperCase()}` 
+      paymentMethod: deduction > 0 && remainingToPay === 0
+        ? 'ANHAR WALLET'
+        : deduction > 0
+          ? `WALLET (₹${deduction}) + ${paymentMethod.toUpperCase()}`
           : paymentMethod.toUpperCase(),
       status: 'CONFIRMED'
     }
@@ -601,7 +652,7 @@ export default function App() {
     }
   }
 
-  // Operator Handlers (Strict Fixed Admin Phone System)
+  // Operator Auth & Fleet Handlers
   const handleOperatorLoginSubmit = async (e) => {
     e.preventDefault()
     setIsAuthLoading(true)
@@ -666,13 +717,19 @@ export default function App() {
   const handleCreateBusSubmit = async (e) => {
     e.preventDefault()
     try {
+      const isDoubleDeck = newBusForm.layoutType === 'ALL_SLEEPER' || newBusForm.layoutType === 'MIXED_SEATER_SLEEPER'
+      const calculatedTotal = isDoubleDeck
+        ? Number(newBusForm.lowerCount) + Number(newBusForm.upperCount)
+        : Number(newBusForm.totalSeats)
+
       const payload = {
         ...newBusForm,
+        totalSeats: calculatedTotal,
         operatorPhone: currentUser || '8977733885'
       }
       const res = await api.createOperatorBus(payload)
       if (res && res.success) {
-        alert(`Bus ${res.bus.busNumber} published successfully!`)
+        alert(`Bus ${res.bus.busNumber} (${res.bus.category} • ${res.bus.totalSeats} Seats/Berths) published successfully!`)
         setShowAddBusModal(false)
         await fetchLatestData()
         await fetchOperatorFleet()
@@ -684,17 +741,15 @@ export default function App() {
     }
   }
 
-  // Operator Removes / Deletes Bus using centralized api.deleteBus
   const handleRemoveBus = async (bus) => {
     const busId = bus._id || bus.id
-
     if (String(busId).startsWith('default-bus-')) {
       alert('This is a built-in starter template. You can add and delete real buses from "+ Add Bus & Configure Pricing".')
       return
     }
 
     const isPast = bus.departureDate ? new Date(bus.departureDate) < new Date() : false
-    const confirmMessage = isPast 
+    const confirmMessage = isPast
       ? `Delete completed bus (${bus.busNumber}) from your history?`
       : `Are you sure you want to remove bus (${bus.busNumber})? Active bookings will be safeguarded.`
 
@@ -702,7 +757,6 @@ export default function App() {
 
     try {
       const result = await api.deleteBus(busId)
-
       if (result && result.success) {
         alert('Bus removed successfully.')
         await fetchLatestData()
@@ -715,11 +769,10 @@ export default function App() {
     }
   }
 
-  // Operator Edit Bus check
   const handleEditBus = (bus) => {
     const isPast = bus.departureDate ? new Date(bus.departureDate) < new Date() : false
     if (isPast) {
-      alert('⚠️ This bus trip is already completed. Past schedules are view-only and cannot be edited.')
+      alert('This bus trip is already completed. Past schedules are view-only and cannot be edited.')
       return
     }
     alert(`Edit feature open for ${bus.busNumber}. (Active trip)`)
@@ -798,6 +851,110 @@ export default function App() {
     }
   }
 
+  // Renders individual berth or pushback seat unit in realistic bus shell
+  const renderCabinUnit = (seat, bus, busKey) => {
+    if (!seat) return <div className="cabin-unit-placeholder" />
+
+    const isSelected = selectedSeats.some(sel => sel.seatNumber === seat.seatNumber)
+    const resaleItem = resaleListings.find(
+      r => String(r.busId) === String(busKey) && Number(r.seatNumber) === Number(seat.seatNumber) && r.status === 'AVAILABLE'
+    )
+    const bookedPax = !resaleItem ? getSeatBookingInfo(seat.seatNumber, busKey) : null
+    const isBooked = Boolean(bookedPax)
+    const isFemaleBooked = isBooked && bookedPax?.gender === 'Female'
+    const isSleeper = seat.type === 'SLEEPER'
+
+    let unitClass = isSleeper ? 'berth-unit' : 'seater-unit'
+    if (isSelected) unitClass += ' unit-selected'
+    else if (resaleItem) unitClass += ' unit-resale'
+    else if (isFemaleBooked) unitClass += ' unit-sold-female'
+    else if (isBooked) unitClass += ' unit-sold'
+
+    return (
+      <div key={seat.seatNumber} className="cabin-slot">
+        <button
+          type="button"
+          disabled={isBooked}
+          className={unitClass}
+          title={`${seat.seatLabel} (${seat.type}) - ${isBooked ? 'Sold' : `₹${resaleItem ? resaleItem.resalePrice : seat.price}`}`}
+          onClick={() => handleSeatClick(seat, bus)}
+        >
+          <span className="unit-code">{seat.seatLabel}</span>
+          {isFemaleBooked && <FemaleBadgeIcon />}
+          {resaleItem && <span className="resale-bolt">⚡</span>}
+          {isSleeper ? (
+            <span className="berth-pillow" />
+          ) : (
+            <span className="seater-cushion" />
+          )}
+        </button>
+        <span className={`unit-price-label ${isBooked ? 'sold-text' : isSelected ? 'selected-text' : resaleItem ? 'resale-text' : ''}`}>
+          {isBooked ? 'Sold' : `₹${resaleItem ? resaleItem.resalePrice : seat.price}`}
+        </span>
+      </div>
+    )
+  }
+
+  // Renders a full Deck Shell (Lower Deck / Upper Deck / Single Deck)
+  const renderDeckShell = (deckSeats, title, showSteering, isSingleDeck, bus, busKey) => {
+    if (!deckSeats || deckSeats.length === 0) return null
+
+    const colsPerRow = isSingleDeck ? 4 : 3
+    const rowCount = Math.ceil(deckSeats.length / colsPerRow)
+    const rows = Array.from({ length: rowCount }, (_, rIdx) => {
+      const start = rIdx * colsPerRow
+      return deckSeats.slice(start, start + colsPerRow)
+    })
+
+    return (
+      <div className="deck-column-wrapper">
+        <div className="deck-top-bar">
+          <span className="deck-title">{title}</span>
+          {showSteering && (
+            <span className="steering-badge" title="Driver Cabin">
+              <SteeringWheelIcon />
+            </span>
+          )}
+        </div>
+
+        <div className="bus-chassis-shell">
+          {rows.map((rowSeats, rIdx) => (
+            <div key={rIdx} className="chassis-row">
+              {isSingleDeck ? (
+                <>
+                  {/* 2+2 Single Deck Seater */}
+                  <div className="chassis-left-pair">
+                    {renderCabinUnit(rowSeats[0], bus, busKey)}
+                    {renderCabinUnit(rowSeats[1], bus, busKey)}
+                  </div>
+                  <div className="chassis-aisle-gap" />
+                  <div className="chassis-right-pair">
+                    {renderCabinUnit(rowSeats[2], bus, busKey)}
+                    {renderCabinUnit(rowSeats[3], bus, busKey)}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* 2+1 Sleeper / Mixed Deck */}
+                  <div className="chassis-left-single">
+                    {renderCabinUnit(rowSeats[0], bus, busKey)}
+                  </div>
+                  <div className="chassis-aisle-gap" />
+                  <div className="chassis-right-pair">
+                    {renderCabinUnit(rowSeats[1], bus, busKey)}
+                    {renderCabinUnit(rowSeats[2], bus, busKey)}
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const isDoubleDeckForm = newBusForm.layoutType === 'ALL_SLEEPER' || newBusForm.layoutType === 'MIXED_SEATER_SLEEPER'
+
   return (
     <div className="anhar-app">
       {/* NAVBAR */}
@@ -835,7 +992,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* TAB 1: PASSENGER SEARCH & DUAL DECK BOOKING */}
+      {/* TAB 1: PASSENGER SEARCH & SIDE-BY-SIDE DUAL DECK BOOKING */}
       {activeTab === 'book' && (
         <>
           <section className="search-hero no-print">
@@ -888,45 +1045,59 @@ export default function App() {
                   <option value="PRICE_ASC">Price: Low to High</option>
                   <option value="PRICE_DESC">Price: High to Low</option>
                   <option value="TIME_ASC">Departure: Earliest First</option>
-                  <option value="RATING_DESC">Top Rated (★)</option>
                 </select>
               </div>
             </div>
 
-            {/* Filter Bar */}
+            {/* Filter Bar (Coach Type + AC / Non-AC + Departure Slot) */}
             <div className="filters-strip">
               <div className="filter-group">
-                <span className="filter-title">Bus Type:</span>
+                <span className="filter-title">Coach Type:</span>
                 <div className="filter-pills">
                   <button className={`pill-btn ${selectedTypeFilter === 'ALL' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('ALL')}>
-                    All Types
+                    All Coaches
                   </button>
-                  <button className={`pill-btn ${selectedTypeFilter === 'AC Sleeper' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('AC Sleeper')}>
-                    🛏️ AC Sleeper
+                  <button className={`pill-btn ${selectedTypeFilter === 'SLEEPER' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('SLEEPER')}>
+                    🛏️ All Sleeper
                   </button>
-                  <button className={`pill-btn ${selectedTypeFilter === 'Mixed Seater & Sleeper' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('Mixed Seater & Sleeper')}>
-                    🚌 Mixed Seater + Sleeper
+                  <button className={`pill-btn ${selectedTypeFilter === 'MIXED' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('MIXED')}>
+                    🚌 Sleeper + Seater
                   </button>
-                  <button className={`pill-btn ${selectedTypeFilter === 'Volvo' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('Volvo')}>
-                    Volvo Multi-Axle
+                  <button className={`pill-btn ${selectedTypeFilter === 'SEATER' ? 'active' : ''}`} onClick={() => setSelectedTypeFilter('SEATER')}>
+                    💺 Seater Only
                   </button>
                 </div>
               </div>
 
               <div className="filter-group">
-                <span className="filter-title">Departure Time:</span>
+                <span className="filter-title">Comfort:</span>
+                <div className="filter-pills">
+                  <button className={`pill-btn ${selectedAcFilter === 'ALL' ? 'active' : ''}`} onClick={() => setSelectedAcFilter('ALL')}>
+                    AC & Non-AC
+                  </button>
+                  <button className={`pill-btn ${selectedAcFilter === 'AC' ? 'active' : ''}`} onClick={() => setSelectedAcFilter('AC')}>
+                    ❄️ AC Only
+                  </button>
+                  <button className={`pill-btn ${selectedAcFilter === 'NON_AC' ? 'active' : ''}`} onClick={() => setSelectedAcFilter('NON_AC')}>
+                    🌬️ Non-AC
+                  </button>
+                </div>
+              </div>
+
+              <div className="filter-group">
+                <span className="filter-title">Departure:</span>
                 <div className="filter-pills">
                   <button className={`pill-btn ${selectedTimeSlot === 'ALL' ? 'active' : ''}`} onClick={() => setSelectedTimeSlot('ALL')}>
                     Any Time
                   </button>
                   <button className={`pill-btn ${selectedTimeSlot === 'MORNING' ? 'active' : ''}`} onClick={() => setSelectedTimeSlot('MORNING')}>
-                    🌅 Morning (06:00 - 12:00)
+                    🌅 Morning
                   </button>
                   <button className={`pill-btn ${selectedTimeSlot === 'EVENING' ? 'active' : ''}`} onClick={() => setSelectedTimeSlot('EVENING')}>
-                    🌇 Evening (18:00 - 23:00)
+                    🌇 Evening
                   </button>
                   <button className={`pill-btn ${selectedTimeSlot === 'NIGHT' ? 'active' : ''}`} onClick={() => setSelectedTimeSlot('NIGHT')}>
-                    🌙 Night (After 23:00)
+                    🌙 Night
                   </button>
                 </div>
               </div>
@@ -938,16 +1109,32 @@ export default function App() {
                 const busKey = bus._id || bus.id
                 const isSingleDeck = bus.layoutType === 'PUSHBACK_ONLY' || bus.layoutType === 'SEATER_ONLY'
                 const allSeats = bus.seats || []
-                const filteredDeckSeats = isSingleDeck ? allSeats : allSeats.filter(s => s.deck === selectedDeckView)
-                const leftSideSeats = filteredDeckSeats.filter(s => s.side === 'LEFT')
-                const rightSideSeats = filteredDeckSeats.filter(s => s.side === 'RIGHT')
+                const lowerSeats = isSingleDeck ? allSeats : allSeats.filter(s => s.deck === 'LOWER')
+                const upperSeats = isSingleDeck ? [] : allSeats.filter(s => s.deck === 'UPPER')
+                const isAc = (bus.acType || 'AC') === 'AC'
+
+                // Count available seats
+                const bookedCount = allSeats.filter(s => Boolean(getSeatBookingInfo(s.seatNumber, busKey))).length
+                const availableCount = Math.max(0, allSeats.length - bookedCount)
 
                 return (
                   <div key={busKey} className="bus-card">
                     <div className="bus-main-info">
                       <div>
                         <h4>{bus.name}</h4>
-                        <span className="bus-badge">{bus.category || bus.layoutType}</span>
+                        <div className="bus-spec-tags">
+                          <span className={`ac-pill ${isAc ? 'ac-yes' : 'ac-no'}`}>
+                            {isAc ? '❄️ AC' : '🌬️ Non-AC'}
+                          </span>
+                          <span className="bus-badge">
+                            {bus.layoutType === 'ALL_SLEEPER'
+                              ? `All Sleeper • ${allSeats.length} Berths`
+                              : bus.layoutType === 'MIXED_SEATER_SLEEPER'
+                                ? `Sleeper + Seater • ${lowerSeats.length} Seats + ${upperSeats.length} Berths`
+                                : `Seater Coach • ${allSeats.length} Seats`}
+                          </span>
+                          <span className="bus-reg-tag">{bus.busNumber}</span>
+                        </div>
                       </div>
                       <div className="rating-tag">4.8 ★</div>
                     </div>
@@ -966,104 +1153,78 @@ export default function App() {
                         <p>{bus.destination || destination}</p>
                       </div>
                       <div className="bus-price">
-                        <span className="fare-label">Base Fare</span>
+                        <span className="fare-label">Starts From</span>
                         <h3>₹{bus.price}</h3>
                       </div>
                     </div>
 
                     <div className="bus-actions">
-                      <span className="seats-count">{bus.totalSeats || allSeats.length} Total Berths / Seats</span>
+                      <span className="seats-count">
+                        <strong style={{ color: '#16a34a' }}>{availableCount} Available</strong> of {bus.totalSeats || allSeats.length} {bus.layoutType === 'ALL_SLEEPER' ? 'Berths' : 'Seats'}
+                      </span>
                       <button className="select-seat-btn" onClick={() => openBusDetails(bus)}>
-                        {selectedBus && (selectedBus._id || selectedBus.id) === busKey ? 'Close Seat Map' : 'Select Seats'}
+                        {selectedBus && (selectedBus._id || selectedBus.id) === busKey ? 'Hide Seats' : 'Select Seats'}
                       </button>
                     </div>
 
-                    {/* DUAL DECK & AISLE SEAT MAP */}
+                    {/* REALISTIC SIDE-BY-SIDE DUAL DECK / SINGLE DECK CABIN MAP */}
                     {selectedBus && (selectedBus._id || selectedBus.id) === busKey && (
                       <div className="seat-layout-panel">
                         <div className="seat-map-header">
-                          <h5>Cabin Layout & Berth Selection</h5>
+                          <div>
+                            <h5>Select Your Berth / Seat</h5>
+                            <span className="coach-layout-caption">
+                              {isAc ? 'Air Conditioned' : 'Non-AC'} •{' '}
+                              {bus.layoutType === 'ALL_SLEEPER'
+                                ? `2+1 Sleeper (${lowerSeats.length} Lower + ${upperSeats.length} Upper Berths)`
+                                : bus.layoutType === 'MIXED_SEATER_SLEEPER'
+                                  ? `2+1 Mixed (${lowerSeats.length} Lower Pushback Seats + ${upperSeats.length} Upper Sleepers)`
+                                  : `2+2 Single Deck (${allSeats.length} Pushback Seats)`}
+                            </span>
+                          </div>
+
                           <div className="seat-legend">
-                            <div className="legend-item"><span className="legend-sample available-sample"></span> Available</div>
-                            <div className="legend-item"><span className="legend-sample selected-sample"></span> Selected</div>
-                            <div className="legend-item"><span className="legend-sample booked-sample"></span> Booked</div>
-                            <div className="legend-item"><span className="legend-sample resale-sample"></span> Resale ⚡</div>
+                            <div className="legend-item"><span className="legend-box avail-box"></span> Available</div>
+                            <div className="legend-item"><span className="legend-box sel-box"></span> Selected</div>
+                            <div className="legend-item"><span className="legend-box sold-box"></span> Sold</div>
+                            <div className="legend-item"><span className="legend-box female-box"></span> Ladies</div>
+                            <div className="legend-item"><span className="legend-box resale-box"></span> Resale ⚡</div>
                           </div>
                         </div>
 
-                        {!isSingleDeck && (
-                          <div className="deck-switcher-tabs">
-                            <button 
-                              className={`deck-tab-btn ${selectedDeckView === 'LOWER' ? 'active' : ''}`}
-                              onClick={() => setSelectedDeckView('LOWER')}
-                            >
-                              💺 Lower Deck ({bus.layoutType === 'ALL_SLEEPER' ? 'Lower Sleepers' : 'Pushback Seaters'})
-                            </button>
-                            <button 
-                              className={`deck-tab-btn ${selectedDeckView === 'UPPER' ? 'active' : ''}`}
-                              onClick={() => setSelectedDeckView('UPPER')}
-                            >
-                              🛏️ Upper Deck (Sleepers)
-                            </button>
-                          </div>
-                        )}
-
-                        <div className="cabin-container">
-                          <div className="driver-strip">
-                            <span>🚍 DRIVER CABIN (RIGHT SIDE) ➔</span>
-                          </div>
-
-                          <div className="deck-cabin-grid">
-                            <div className="cabin-column">
-                              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b' }}>Left Window</span>
-                              {leftSideSeats.map(s => {
-                                const isSelected = selectedSeats.some(sel => sel.seatNumber === s.seatNumber)
-                                const resaleItem = resaleListings.find(
-                                  r => String(r.busId) === String(busKey) && Number(r.seatNumber) === Number(s.seatNumber) && r.status === 'AVAILABLE'
-                                )
-                                const isBooked = !resaleItem && isSeatBooked(s.seatNumber, busKey)
-
-                                let cls = 'seat-unit'
-                                if (s.type === 'SLEEPER') cls += ' sleeper-berth'
-                                if (isSelected) cls += ' seat-selected'
-                                else if (resaleItem) cls += ' seat-resale'
-                                else if (isBooked) cls += ' seat-booked'
-
-                                return (
-                                  <button key={s.seatNumber} disabled={isBooked} className={cls} onClick={() => handleSeatClick(s, bus)}>
-                                    <span>{s.seatLabel} {s.type === 'SLEEPER' ? '🛏️' : '💺'}</span>
-                                    <span className="seat-cost">₹{resaleItem ? resaleItem.resalePrice : s.price}</span>
-                                  </button>
-                                )
-                              })}
-                            </div>
-
-                            <div className="gangway-aisle">AISLE</div>
-
-                            <div className="cabin-column">
-                              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b' }}>Driver Side (Right)</span>
-                              {rightSideSeats.map(s => {
-                                const isSelected = selectedSeats.some(sel => sel.seatNumber === s.seatNumber)
-                                const resaleItem = resaleListings.find(
-                                  r => String(r.busId) === String(busKey) && Number(r.seatNumber) === Number(s.seatNumber) && r.status === 'AVAILABLE'
-                                )
-                                const isBooked = !resaleItem && isSeatBooked(s.seatNumber, busKey)
-
-                                let cls = 'seat-unit'
-                                if (s.type === 'SLEEPER') cls += ' sleeper-berth'
-                                if (isSelected) cls += ' seat-selected'
-                                else if (resaleItem) cls += ' seat-resale'
-                                else if (isBooked) cls += ' seat-booked'
-
-                                return (
-                                  <button key={s.seatNumber} disabled={isBooked} className={cls} onClick={() => handleSeatClick(s, bus)}>
-                                    <span>{s.seatLabel} {s.type === 'SLEEPER' ? '🛏️' : '💺'}</span>
-                                    <span className="seat-cost">₹{resaleItem ? resaleItem.resalePrice : s.price}</span>
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          </div>
+                        {/* SIDE-BY-SIDE DECKS */}
+                        <div className={`decks-side-by-side ${isSingleDeck ? 'single-deck-center' : ''}`}>
+                          {isSingleDeck ? (
+                            renderDeckShell(
+                              lowerSeats,
+                              `Main Cabin (${lowerSeats.length} Seats)`,
+                              true,
+                              true,
+                              bus,
+                              busKey
+                            )
+                          ) : (
+                            <>
+                              {renderDeckShell(
+                                lowerSeats,
+                                bus.layoutType === 'MIXED_SEATER_SLEEPER'
+                                  ? `Lower deck (${lowerSeats.length} Seats)`
+                                  : `Lower deck (${lowerSeats.length} Berths)`,
+                                true,
+                                false,
+                                bus,
+                                busKey
+                              )}
+                              {renderDeckShell(
+                                upperSeats,
+                                `Upper deck (${upperSeats.length} Berths)`,
+                                false,
+                                false,
+                                bus,
+                                busKey
+                              )}
+                            </>
+                          )}
                         </div>
 
                         {/* Pick-up / Drop selection */}
@@ -1074,8 +1235,8 @@ export default function App() {
                               {(CITY_POINTS[source] || []).map((bp) => {
                                 const isSelected = selectedBoardingPoint === bp.name
                                 return (
-                                  <div 
-                                    key={bp.id} 
+                                  <div
+                                    key={bp.id}
                                     className={`point-option-card ${isSelected ? 'point-selected' : ''}`}
                                     onClick={() => setSelectedBoardingPoint(bp.name)}
                                   >
@@ -1096,8 +1257,8 @@ export default function App() {
                               {(CITY_POINTS[destination] || []).map((dp) => {
                                 const isSelected = selectedDroppingPoint === dp.name
                                 return (
-                                  <div 
-                                    key={dp.id} 
+                                  <div
+                                    key={dp.id}
                                     className={`point-option-card ${isSelected ? 'point-selected' : ''}`}
                                     onClick={() => setSelectedDroppingPoint(dp.name)}
                                   >
@@ -1115,7 +1276,7 @@ export default function App() {
 
                         <div className="seat-summary">
                           <div>
-                            <p>Selected Seats ({selectedSeats.length}): <strong>{selectedSeats.map(s => s.seatLabel).join(', ') || 'None'}</strong></p>
+                            <p>Selected ({selectedSeats.length}): <strong>{selectedSeats.map(s => `${s.seatLabel} (₹${s.price})`).join(', ') || 'None'}</strong></p>
                             <p className="chosen-points-preview">
                               <strong>Pickup:</strong> {selectedBoardingPoint} | <strong>Drop:</strong> {selectedDroppingPoint}
                             </p>
@@ -1162,7 +1323,7 @@ export default function App() {
                   <div className="passengers-chips">
                     {(b.passengers || []).map(p => (
                       <div key={p.seatNumber} className="seat-pill">
-                        <strong>Seat {p.seatNumber}</strong>: {p.name} ({p.gender}, {p.age} yrs)
+                        <strong>{p.seatLabel || `Seat ${p.seatNumber}`}</strong>: {p.name} ({p.gender}, {p.age} yrs)
                       </div>
                     ))}
                   </div>
@@ -1224,10 +1385,10 @@ export default function App() {
           <div className="results-header-row">
             <div>
               <h2>🚍 Fleet Operator Desk</h2>
-              <p>Configure layouts, remove old buses, and view trip records</p>
+              <p>Configure AC/Non-AC coaches, berth/seat capacity, and pricing</p>
             </div>
             <div style={{ display: 'flex', gap: '0.8rem' }}>
-              <button className="confirm-btn" onClick={() => setShowAddBusModal(true)}>+ Add Bus & Configure Pricing</button>
+              <button className="confirm-btn" onClick={() => setShowAddBusModal(true)}>+ Add Bus & Configure Capacity</button>
               <button className="select-seat-btn" style={{ background: '#fee2e2', color: '#dc2626' }} onClick={handleOperatorLogout}>Exit Portal</button>
             </div>
           </div>
@@ -1236,16 +1397,27 @@ export default function App() {
             {(operatorBuses.length > 0 ? operatorBuses : activeFleet).map(bus => {
               const busKey = bus._id || bus.id
               const isPast = bus.departureDate ? new Date(bus.departureDate) < new Date() : false
+              const isAc = (bus.acType || 'AC') === 'AC'
 
               return (
                 <div key={busKey} className="booking-card" style={{ opacity: isPast ? 0.9 : 1, borderLeft: isPast ? '4px solid #94a3b8' : '4px solid #16a34a' }}>
                   <div className="booking-top">
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
                         <span className="pnr-tag">{bus.busNumber}</span>
+                        <span className={`ac-pill ${isAc ? 'ac-yes' : 'ac-no'}`}>
+                          {isAc ? '❄️ AC' : '🌬️ Non-AC'}
+                        </span>
+                        <span className="bus-badge" style={{ marginTop: 0 }}>
+                          {bus.layoutType === 'ALL_SLEEPER'
+                            ? `All Sleeper (${bus.totalSeats} Berths)`
+                            : bus.layoutType === 'MIXED_SEATER_SLEEPER'
+                              ? `Sleeper + Seater (${bus.totalSeats} Total)`
+                              : `Seater Only (${bus.totalSeats} Seats)`}
+                        </span>
                         {isPast ? (
                           <span style={{ fontSize: '0.75rem', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
-                            ⌛ Completed (Past Day)
+                            ⌛ Completed
                           </span>
                         ) : (
                           <span style={{ fontSize: '0.75rem', background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
@@ -1254,27 +1426,25 @@ export default function App() {
                         )}
                       </div>
                       <h4>{bus.name}</h4>
-                      <p>{bus.source} → {bus.destination} • Dept: {bus.departure} • Type: {bus.layoutType}</p>
+                      <p>{bus.source} → {bus.destination} • Dept: {bus.departure}</p>
                       {bus.departureDate && (
                         <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
                           📅 Scheduled Departure: {new Date(bus.departureDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                       )}
                     </div>
-                    
-                    {/* OPERATOR ACTIONS: EDIT, REMOVE & MANIFEST */}
+
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       <button className="select-seat-btn" onClick={() => handleViewManifest(busKey)}>
                         📋 Passenger Chart
                       </button>
 
-                      {/* EDIT BUTTON: Disabled if past day */}
-                      <button 
-                        className="select-seat-btn" 
+                      <button
+                        className="select-seat-btn"
                         disabled={isPast}
                         title={isPast ? 'Past trips cannot be modified' : 'Edit details'}
-                        style={{ 
-                          background: isPast ? '#f1f5f9' : '#e0f2fe', 
+                        style={{
+                          background: isPast ? '#f1f5f9' : '#e0f2fe',
                           color: isPast ? '#94a3b8' : '#0369a1',
                           cursor: isPast ? 'not-allowed' : 'pointer'
                         }}
@@ -1283,9 +1453,8 @@ export default function App() {
                         ✏️ {isPast ? 'Read Only' : 'Edit Bus'}
                       </button>
 
-                      {/* REMOVE / DELETE BUTTON: Always active */}
-                      <button 
-                        className="select-seat-btn" 
+                      <button
+                        className="select-seat-btn"
                         style={{ background: '#fee2e2', color: '#b91c1c' }}
                         onClick={() => handleRemoveBus(bus)}
                       >
@@ -1333,7 +1502,6 @@ export default function App() {
               <button type="button" className="close-btn" onClick={() => setShowPinModal(false)}>✕</button>
             </div>
 
-            {/* MODE 1: RETURNING LOGIN (NAME + PASSWORD ONLY) */}
             {operatorAuthMode === 'LOGIN' ? (
               <form onSubmit={handleOperatorLoginSubmit} style={{ marginTop: '0.8rem' }}>
                 <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1rem' }}>
@@ -1382,7 +1550,6 @@ export default function App() {
                 </div>
               </form>
             ) : (
-              /* MODE 2: FIRST TIME REGISTRATION VIA FIXED ADMIN NUMBER */
               <form onSubmit={handleOperatorRegisterSubmit} style={{ marginTop: '0.8rem' }}>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.8rem', borderRadius: '6px', marginBottom: '1rem' }}>
                   <p style={{ fontSize: '0.82rem', color: '#166534', margin: 0 }}>
@@ -1450,38 +1617,136 @@ export default function App() {
         </div>
       )}
 
-      {/* ADD BUS MODAL WITH TIERED SEAT PRICING & DATE SELECTOR */}
+      {/* ADD BUS MODAL WITH COACH TYPE, AC/NON-AC & EXACT BERTH/SEAT CAPACITY */}
       {showAddBusModal && (
         <div className="modal-backdrop no-print">
           <div className="modal-box large-modal">
             <form onSubmit={handleCreateBusSubmit}>
               <div className="modal-header">
-                <h3>Add Bus & Configure Seat Pricing</h3>
+                <h3>Add Bus & Configure Coach Layout</h3>
                 <button type="button" className="close-btn" onClick={() => setShowAddBusModal(false)}>✕</button>
               </div>
 
-              <div className="form-group">
-                <label>Bus Service Name</label>
-                <input type="text" required placeholder="e.g. ANHAR Multi-Axle Volvo" value={newBusForm.name} onChange={(e) => setNewBusForm({ ...newBusForm, name: e.target.value })} />
-              </div>
-
               <div className="form-row">
+                <div className="form-group flex-2">
+                  <label>Bus Service Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. ANHAR Multi-Axle Volvo"
+                    value={newBusForm.name}
+                    onChange={(e) => setNewBusForm({ ...newBusForm, name: e.target.value })}
+                  />
+                </div>
                 <div className="form-group flex-1">
                   <label>Registration Number</label>
-                  <input type="text" required placeholder="e.g. AP 04 TX 9924" value={newBusForm.busNumber} onChange={(e) => setNewBusForm({ ...newBusForm, busNumber: e.target.value })} />
-                </div>
-                <div className="form-group flex-1">
-                  <label>Bus Seating Layout Model</label>
-                  <select value={newBusForm.layoutType} onChange={(e) => setNewBusForm({ ...newBusForm, layoutType: e.target.value })}>
-                    <option value="MIXED_SEATER_SLEEPER">Lower Pushback Seater + Upper Sleeper</option>
-                    <option value="ALL_SLEEPER">All Sleeper Berths (Lower + Upper)</option>
-                    <option value="PUSHBACK_ONLY">Pushback Seater Only (Single Deck 2+2)</option>
-                    <option value="SEATER_ONLY">Regular Classic Seater Only (Single Deck 2+2)</option>
-                  </select>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. AP 04 TX 9924"
+                    value={newBusForm.busNumber}
+                    onChange={(e) => setNewBusForm({ ...newBusForm, busNumber: e.target.value })}
+                  />
                 </div>
               </div>
 
+              {/* COACH TYPE & AC / NON-AC SELECTOR */}
               <div className="form-row">
+                <div className="form-group flex-2">
+                  <label>Coach Layout Category</label>
+                  <select
+                    value={newBusForm.layoutType}
+                    onChange={(e) => setNewBusForm({ ...newBusForm, layoutType: e.target.value })}
+                  >
+                    <option value="ALL_SLEEPER">All Sleeper Bus (Lower + Upper Berths)</option>
+                    <option value="MIXED_SEATER_SLEEPER">Sleeper + Seater Bus (Lower Seats + Upper Berths)</option>
+                    <option value="PUSHBACK_ONLY">Seater Only Bus (2+2 Pushback Seater)</option>
+                    <option value="SEATER_ONLY">Seater Only Bus (2+2 Classic Seater)</option>
+                  </select>
+                </div>
+
+                <div className="form-group flex-1">
+                  <label>Air Conditioning</label>
+                  <div className="ac-toggle-group">
+                    <button
+                      type="button"
+                      className={`ac-toggle-btn ${newBusForm.acType === 'AC' ? 'active' : ''}`}
+                      onClick={() => setNewBusForm({ ...newBusForm, acType: 'AC' })}
+                    >
+                      ❄️ AC
+                    </button>
+                    <button
+                      type="button"
+                      className={`ac-toggle-btn ${newBusForm.acType === 'NON_AC' ? 'active' : ''}`}
+                      onClick={() => setNewBusForm({ ...newBusForm, acType: 'NON_AC' })}
+                    >
+                      🌬️ Non-AC
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* DYNAMIC BERTH / SEAT COUNT INPUTS BASED ON COACH TYPE */}
+              <div className="capacity-config-box">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                  <strong>
+                    {newBusForm.layoutType === 'ALL_SLEEPER'
+                      ? '🛏️ Total Sleeper Berths Configuration'
+                      : newBusForm.layoutType === 'MIXED_SEATER_SLEEPER'
+                        ? '🚌 Lower Seater & Upper Sleeper Berths Count'
+                        : '💺 Total Seater Capacity Configuration'}
+                  </strong>
+                  <span className="capacity-total-pill">
+                    Total Capacity: {isDoubleDeckForm ? Number(newBusForm.lowerCount) + Number(newBusForm.upperCount) : Number(newBusForm.totalSeats)}{' '}
+                    {newBusForm.layoutType === 'ALL_SLEEPER' ? 'Berths' : isDoubleDeckForm ? 'Seats + Berths' : 'Seats'}
+                  </span>
+                </div>
+
+                {isDoubleDeckForm ? (
+                  <div className="form-row">
+                    <div className="form-group flex-1" style={{ marginBottom: 0 }}>
+                      <label>
+                        {newBusForm.layoutType === 'ALL_SLEEPER'
+                          ? 'Lower Deck Berths (e.g. 15 or 18)'
+                          : 'Lower Deck Pushback Seats (e.g. 15 or 18)'}
+                      </label>
+                      <input
+                        type="number"
+                        required
+                        min="6"
+                        max="30"
+                        value={newBusForm.lowerCount}
+                        onChange={(e) => setNewBusForm({ ...newBusForm, lowerCount: Number(e.target.value) })}
+                      />
+                    </div>
+                    <div className="form-group flex-1" style={{ marginBottom: 0 }}>
+                      <label>Upper Deck Sleeper Berths (e.g. 15 or 18)</label>
+                      <input
+                        type="number"
+                        required
+                        min="6"
+                        max="30"
+                        value={newBusForm.upperCount}
+                        onChange={(e) => setNewBusForm({ ...newBusForm, upperCount: Number(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Total Number of Seats in Bus (e.g. 24, 32, 36, 40)</label>
+                    <input
+                      type="number"
+                      required
+                      min="12"
+                      max="60"
+                      value={newBusForm.totalSeats}
+                      onChange={(e) => setNewBusForm({ ...newBusForm, totalSeats: Number(e.target.value) })}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="form-row" style={{ marginTop: '0.85rem' }}>
                 <div className="form-group flex-1">
                   <label>Departure Date</label>
                   <input type="date" required value={newBusForm.date} onChange={(e) => setNewBusForm({ ...newBusForm, date: e.target.value })} />
@@ -1489,9 +1754,13 @@ export default function App() {
                 <div className="form-group flex-1">
                   <label>Departure Time</label>
                   <input type="time" required value={newBusForm.departure} onChange={(e) => {
-                    const [h, m] = e.target.value.split(':').map(Number);
-                    setNewBusForm({ ...newBusForm, departure: e.target.value, departureHour: h + m / 60 });
+                    const [h, m] = e.target.value.split(':').map(Number)
+                    setNewBusForm({ ...newBusForm, departure: e.target.value, departureHour: h + m / 60 })
                   }} />
+                </div>
+                <div className="form-group flex-1">
+                  <label>Arrival Time</label>
+                  <input type="time" required value={newBusForm.arrival} onChange={(e) => setNewBusForm({ ...newBusForm, arrival: e.target.value })} />
                 </div>
               </div>
 
@@ -1514,36 +1783,35 @@ export default function App() {
                     <option value="Chennai">Chennai</option>
                   </select>
                 </div>
-              </div>
-
-              <div className="form-row">
                 <div className="form-group flex-1">
-                  <label>Base Display Fare (₹)</label>
+                  <label>Starting Display Fare (₹)</label>
                   <input type="number" required min="100" value={newBusForm.price} onChange={(e) => setNewBusForm({ ...newBusForm, price: Number(e.target.value) })} />
                 </div>
               </div>
 
               {/* SPECIFIC SEAT-WISE PRICING CONTROLS */}
-              <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '1rem' }}>
-                <h4 style={{ marginBottom: '0.8rem' }}>Tiered Seat-wise Price Customization (₹)</h4>
+              <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '0.4rem' }}>
+                <h4 style={{ marginBottom: '0.8rem' }}>Tiered Seat / Berth Price Customization (₹)</h4>
                 <div className="form-row">
                   <div className="form-group flex-1">
-                    <label>Left Window Single Berth/Seat (₹)</label>
+                    <label>{isDoubleDeckForm ? 'Lower Left Single Berth/Seat (₹)' : 'Left Window Side Seat (₹)'}</label>
                     <input type="number" value={newBusForm.lowerLeftPrice} onChange={(e) => setNewBusForm({ ...newBusForm, lowerLeftPrice: Number(e.target.value) })} />
                   </div>
                   <div className="form-group flex-1">
-                    <label>Driver Side (Right) Double Seat/Berth (₹)</label>
+                    <label>{isDoubleDeckForm ? 'Lower Right Double Berth/Seat (₹)' : 'Right Side Seat (₹)'}</label>
                     <input type="number" value={newBusForm.lowerRightPrice} onChange={(e) => setNewBusForm({ ...newBusForm, lowerRightPrice: Number(e.target.value) })} />
                   </div>
                 </div>
 
                 <div className="form-row" style={{ marginTop: '0.6rem' }}>
+                  {isDoubleDeckForm && (
+                    <div className="form-group flex-1">
+                      <label>Upper Deck Sleeper Berth (₹)</label>
+                      <input type="number" value={newBusForm.upperLeftPrice} onChange={(e) => setNewBusForm({ ...newBusForm, upperLeftPrice: Number(e.target.value) })} />
+                    </div>
+                  )}
                   <div className="form-group flex-1">
-                    <label>Upper Sleeper Berth (₹)</label>
-                    <input type="number" value={newBusForm.upperLeftPrice} onChange={(e) => setNewBusForm({ ...newBusForm, upperLeftPrice: Number(e.target.value) })} />
-                  </div>
-                  <div className="form-group flex-1">
-                    <label>Back Row Discounted Seat (₹)</label>
+                    <label>Last Row Discounted Price (₹)</label>
                     <input type="number" value={newBusForm.backPrice} onChange={(e) => setNewBusForm({ ...newBusForm, backPrice: Number(e.target.value) })} />
                   </div>
                 </div>
@@ -1563,33 +1831,33 @@ export default function App() {
           <div className="modal-box large-modal">
             <form onSubmit={handleProceedToPayment}>
               <div className="modal-header">
-                <h3>Passenger Details ({passengerDetails.length} Seats)</h3>
+                <h3>Passenger Details ({passengerDetails.length} Selected)</h3>
                 <button type="button" className="close-btn" onClick={() => setShowPassengerModal(false)}>✕</button>
               </div>
 
               {passengerDetails.map((p, idx) => (
                 <div key={p.seatNumber} className="booking-card" style={{ marginBottom: '0.8rem' }}>
-                  <h5>Passenger {idx + 1} — Seat {p.seatLabel} (₹{p.price})</h5>
+                  <h5>Passenger {idx + 1} — {p.seatLabel} (₹{p.price})</h5>
                   <div className="form-row" style={{ marginTop: '0.5rem' }}>
                     <div className="form-group flex-2">
                       <input type="text" required placeholder="Full Name (as per Govt ID)" value={p.name} onChange={(e) => {
-                        const updated = [...passengerDetails];
-                        updated[idx].name = e.target.value;
-                        setPassengerDetails(updated);
+                        const updated = [...passengerDetails]
+                        updated[idx].name = e.target.value
+                        setPassengerDetails(updated)
                       }} />
                     </div>
                     <div className="form-group flex-1">
                       <input type="number" required placeholder="Age" min="1" max="100" value={p.age} onChange={(e) => {
-                        const updated = [...passengerDetails];
-                        updated[idx].age = e.target.value;
-                        setPassengerDetails(updated);
+                        const updated = [...passengerDetails]
+                        updated[idx].age = e.target.value
+                        setPassengerDetails(updated)
                       }} />
                     </div>
                     <div className="form-group flex-1">
                       <select value={p.gender} onChange={(e) => {
-                        const updated = [...passengerDetails];
-                        updated[idx].gender = e.target.value;
-                        setPassengerDetails(updated);
+                        const updated = [...passengerDetails]
+                        updated[idx].gender = e.target.value
+                        setPassengerDetails(updated)
                       }}>
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
@@ -1651,14 +1919,14 @@ export default function App() {
             </div>
 
             {walletBalance > 0 && (
-              <div 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.6rem', 
-                  padding: '0.6rem', 
-                  background: useWalletOffset ? '#e0f2fe' : '#f1f5f9', 
-                  borderRadius: '6px', 
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  padding: '0.6rem',
+                  background: useWalletOffset ? '#e0f2fe' : '#f1f5f9',
+                  borderRadius: '6px',
                   cursor: 'pointer',
                   marginBottom: '1rem'
                 }}
@@ -1672,16 +1940,16 @@ export default function App() {
             {finalPayableAfterWallet > 0 && (
               <>
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className={`pill-btn ${paymentMethod === 'upi' ? 'active' : ''}`}
                     onClick={() => setPaymentMethod('upi')}
                     style={{ flex: 1 }}
                   >
                     UPI Apps / QR
                   </button>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className={`pill-btn ${paymentMethod === 'card' ? 'active' : ''}`}
                     onClick={() => setPaymentMethod('card')}
                     style={{ flex: 1 }}
@@ -1692,9 +1960,9 @@ export default function App() {
 
                 {paymentMethod === 'upi' && (
                   <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-                    <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=upi://pay?pa=anharbus@icici&pn=ANHARBUS&am=${finalPayableAfterWallet}&cu=INR`} 
-                      alt="UPI QR Code" 
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=upi://pay?pa=anharbus@icici&pn=ANHARBUS&am=${finalPayableAfterWallet}&cu=INR`}
+                      alt="UPI QR Code"
                     />
                     <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.5rem' }}>Scan with GPay, PhonePe, or Paytm</p>
                   </div>
@@ -1723,9 +1991,9 @@ export default function App() {
                   <h2>🚌 ANHAR BUS</h2>
                   <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Official E-Ticket & Boarding Pass</p>
                 </div>
-                <img 
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=ANHAR_PASS_PNR_${viewTicket.pnr}`} 
-                  alt="Boarding Pass QR" 
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=ANHAR_PASS_PNR_${viewTicket.pnr}`}
+                  alt="Boarding Pass QR"
                 />
               </div>
 
@@ -1752,7 +2020,7 @@ export default function App() {
                       <td>{i + 1}</td>
                       <td><strong>{p.name}</strong></td>
                       <td>{p.age} yrs / {p.gender}</td>
-                      <td><span className="pnr-tag">Seat {p.seatNumber}</span></td>
+                      <td><span className="pnr-tag">{p.seatLabel || `Seat ${p.seatNumber}`}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1787,24 +2055,24 @@ export default function App() {
                   className={`pill-btn ${seatsToResell.includes(p.seatNumber) ? 'active' : ''}`}
                   onClick={() => toggleSeatToResell(p.seatNumber)}
                 >
-                  Seat {p.seatNumber} ({p.name})
+                  {p.seatLabel || `Seat ${p.seatNumber}`} ({p.name})
                 </button>
               ))}
             </div>
 
             <div className="form-group">
               <label>Markup / Discount Adjust (₹)</label>
-              <input 
-                type="number" 
-                value={resaleMarkup} 
-                onChange={(e) => setResaleMarkup(Number(e.target.value))} 
+              <input
+                type="number"
+                value={resaleMarkup}
+                onChange={(e) => setResaleMarkup(Number(e.target.value))}
                 placeholder="0 for original price"
               />
             </div>
 
-            <button 
-              type="button" 
-              className="confirm-btn" 
+            <button
+              type="button"
+              className="confirm-btn"
               style={{ width: '100%', marginTop: '0.8rem' }}
               disabled={seatsToResell.length === 0 || isSubmittingResale}
               onClick={confirmResaleListing}
@@ -1832,29 +2100,29 @@ export default function App() {
             <form onSubmit={handleResalePurchaseSubmit}>
               <div className="form-group">
                 <label>Passenger Full Name</label>
-                <input 
-                  type="text" 
-                  required 
-                  value={buyerDetails.name} 
-                  onChange={(e) => setBuyerDetails({ ...buyerDetails, name: e.target.value })} 
+                <input
+                  type="text"
+                  required
+                  value={buyerDetails.name}
+                  onChange={(e) => setBuyerDetails({ ...buyerDetails, name: e.target.value })}
                 />
               </div>
               <div className="form-row">
                 <div className="form-group flex-1">
                   <label>Age</label>
-                  <input 
-                    type="number" 
-                    required 
-                    min="1" 
-                    max="100" 
-                    value={buyerDetails.age} 
-                    onChange={(e) => setBuyerDetails({ ...buyerDetails, age: e.target.value })} 
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max="100"
+                    value={buyerDetails.age}
+                    onChange={(e) => setBuyerDetails({ ...buyerDetails, age: e.target.value })}
                   />
                 </div>
                 <div className="form-group flex-1">
                   <label>Gender</label>
-                  <select 
-                    value={buyerDetails.gender} 
+                  <select
+                    value={buyerDetails.gender}
                     onChange={(e) => setBuyerDetails({ ...buyerDetails, gender: e.target.value })}
                   >
                     <option value="Male">Male</option>
@@ -1865,12 +2133,12 @@ export default function App() {
               </div>
               <div className="form-group">
                 <label>Mobile Number (For Ticket SMS)</label>
-                <input 
-                  type="tel" 
-                  required 
-                  pattern="[0-9]{10}" 
-                  value={buyerDetails.phone} 
-                  onChange={(e) => setBuyerDetails({ ...buyerDetails, phone: e.target.value })} 
+                <input
+                  type="tel"
+                  required
+                  pattern="[0-9]{10}"
+                  value={buyerDetails.phone}
+                  onChange={(e) => setBuyerDetails({ ...buyerDetails, phone: e.target.value })}
                 />
               </div>
               <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }}>
@@ -1914,14 +2182,14 @@ export default function App() {
                   Enter code sent to <strong>+91 {loginForm.phone}</strong>
                 </p>
                 <div className="form-group">
-                  <input 
-                    type="text" 
-                    required 
-                    maxLength="4" 
-                    placeholder="••••" 
-                    value={otpInput} 
-                    onChange={(e) => setOtpInput(e.target.value)} 
-                    style={{ textAlign: 'center', fontSize: '1.4rem', letterSpacing: '0.3rem' }} 
+                  <input
+                    type="text"
+                    required
+                    maxLength="4"
+                    placeholder="••••"
+                    value={otpInput}
+                    onChange={(e) => setOtpInput(e.target.value)}
+                    style={{ textAlign: 'center', fontSize: '1.4rem', letterSpacing: '0.3rem' }}
                   />
                 </div>
                 <button type="submit" className="confirm-btn" style={{ width: '100%', marginTop: '0.8rem' }} disabled={isVerifyingOtp}>

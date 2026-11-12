@@ -69,83 +69,81 @@ const sendQuickSms = async (phone, message) => {
   }
 };
 
-// Layout Generator Helper for Buses
+// Dynamic Seat & Berth Generator (Supports custom counts, AC/Non-AC, 2+1 & 2+2 layouts)
 const buildDynamicSeats = (layoutType, p) => {
   const seats = [];
   const base = Number(p.basePrice || 600);
-  const leftSeater = Number(p.lowerLeftPrice || base);
-  const rightSeater = Number(p.lowerRightPrice || base + 50);
-  const upperLeftSleeper = Number(p.upperLeftPrice || base + 250);
-  const upperRightSleeper = Number(p.upperRightPrice || base + 300);
-  const backDiscounted = Number(p.backPrice || base - 50);
+  const leftPrice = Number(p.lowerLeftPrice || base);
+  const rightPrice = Number(p.lowerRightPrice || base + 50);
+  const upperPrice = Number(p.upperLeftPrice || base + 250);
+  const backDiscounted = Number(p.backPrice || Math.max(100, base - 50));
 
-  if (layoutType === 'MIXED_SEATER_SLEEPER') {
-    // LOWER DECK: Pushback Seaters 1 to 15
-    for (let i = 1; i <= 15; i++) {
-      const isLeft = [1, 4, 7, 10].includes(i);
-      const isBack = [13, 14, 15].includes(i);
+  if (layoutType === 'ALL_SLEEPER' || layoutType === 'MIXED_SEATER_SLEEPER') {
+    const totalRequested = Number(p.totalSeats || 30);
+    const lowerCount = Number(p.lowerCount || Math.ceil(totalRequested / 2));
+    const upperCount = Number(p.upperCount || (totalRequested - lowerCount));
+    const lowerType = layoutType === 'ALL_SLEEPER' ? 'SLEEPER' : 'PUSHBACK';
+
+    // 2+1 Deck Grid (3 columns per row: Col 1 = Left Single, Col 2 & 3 = Right Double)
+    const lowerRows = Math.ceil(lowerCount / 3);
+    for (let i = 1; i <= lowerCount; i++) {
+      const row = Math.ceil(i / 3);
+      const col = ((i - 1) % 3) + 1;
+      const isLeft = col === 1;
+      const isLastRow = row === lowerRows;
+
       seats.push({
         seatNumber: i,
         seatLabel: `L${i}`,
         deck: 'LOWER',
+        row,
+        col,
         side: isLeft ? 'LEFT' : 'RIGHT',
-        type: 'PUSHBACK',
-        price: isBack ? backDiscounted : (isLeft ? leftSeater : rightSeater)
+        type: lowerType,
+        price: isLastRow ? backDiscounted : (isLeft ? leftPrice : rightPrice)
       });
     }
-    // UPPER DECK: Sleeper Berths 16 to 30
-    for (let i = 16; i <= 30; i++) {
-      const isLeft = [16, 19, 22, 25].includes(i);
-      const isBack = [28, 29, 30].includes(i);
+
+    const upperRows = Math.ceil(upperCount / 3);
+    for (let i = 1; i <= upperCount; i++) {
+      const seatNum = lowerCount + i;
+      const row = Math.ceil(i / 3);
+      const col = ((i - 1) % 3) + 1;
+      const isLeft = col === 1;
+      const isLastRow = row === upperRows;
+
       seats.push({
-        seatNumber: i,
-        seatLabel: `U${i - 15}`,
+        seatNumber: seatNum,
+        seatLabel: `U${i}`,
         deck: 'UPPER',
+        row,
+        col,
         side: isLeft ? 'LEFT' : 'RIGHT',
         type: 'SLEEPER',
-        price: isBack ? backDiscounted + 100 : (isLeft ? upperLeftSleeper : upperRightSleeper)
-      });
-    }
-  } else if (layoutType === 'ALL_SLEEPER') {
-    // LOWER DECK: Sleeper Berths 1 to 15
-    for (let i = 1; i <= 15; i++) {
-      const isLeft = [1, 4, 7, 10].includes(i);
-      const isBack = [13, 14, 15].includes(i);
-      seats.push({
-        seatNumber: i,
-        seatLabel: `L${i}`,
-        deck: 'LOWER',
-        side: isLeft ? 'LEFT' : 'RIGHT',
-        type: 'SLEEPER',
-        price: isBack ? backDiscounted : (isLeft ? leftSeater + 150 : rightSeater + 150)
-      });
-    }
-    // UPPER DECK: Sleeper Berths 16 to 30
-    for (let i = 16; i <= 30; i++) {
-      const isLeft = [16, 19, 22, 25].includes(i);
-      const isBack = [28, 29, 30].includes(i);
-      seats.push({
-        seatNumber: i,
-        seatLabel: `U${i - 15}`,
-        deck: 'UPPER',
-        side: isLeft ? 'LEFT' : 'RIGHT',
-        type: 'SLEEPER',
-        price: isBack ? backDiscounted + 100 : (isLeft ? upperLeftSleeper : upperRightSleeper)
+        price: isLastRow ? Math.max(backDiscounted, upperPrice - 100) : upperPrice
       });
     }
   } else {
-    // SINGLE DECK: PUSHBACK_ONLY or SEATER_ONLY
+    // SINGLE DECK: PUSHBACK_ONLY or SEATER_ONLY (2+2 Layout: 4 seats per row)
     const seatType = layoutType === 'PUSHBACK_ONLY' ? 'PUSHBACK' : 'SEATER';
-    for (let i = 1; i <= 24; i++) {
-      const isLeft = [1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21].includes(i);
-      const isBack = [21, 22, 23, 24].includes(i);
+    const totalCount = Number(p.totalSeats || 32);
+    const totalRows = Math.ceil(totalCount / 4);
+
+    for (let i = 1; i <= totalCount; i++) {
+      const row = Math.ceil(i / 4);
+      const col = ((i - 1) % 4) + 1;
+      const isLeft = col <= 2;
+      const isLastRow = row === totalRows;
+
       seats.push({
         seatNumber: i,
         seatLabel: `S${i}`,
         deck: 'SINGLE',
+        row,
+        col,
         side: isLeft ? 'LEFT' : 'RIGHT',
         type: seatType,
-        price: isBack ? backDiscounted : (isLeft ? leftSeater : rightSeater)
+        price: isLastRow ? backDiscounted : (isLeft ? leftPrice : rightPrice)
       });
     }
   }
@@ -159,7 +157,6 @@ const seedDefaultFleetIfEmpty = async () => {
     const count = await Bus.countDocuments();
     if (count === 0) {
       console.log('Seeding initial ANHAR BUS fleet into MongoDB Atlas...');
-      
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const datePrefix = tomorrow.toISOString().split('T')[0];
@@ -177,13 +174,25 @@ const seedDefaultFleetIfEmpty = async () => {
           arrival: '06:00',
           duration: '8h 30m',
           layoutType: 'MIXED_SEATER_SLEEPER',
-          category: 'Mixed Seater & Sleeper',
-          type: '2+1 Lower Pushback + Upper Sleeper',
+          acType: 'AC',
+          category: 'AC Sleeper + Seater',
+          type: '2+1 AC Lower Seater + Upper Sleeper (30 Berths/Seats)',
           price: 650,
           totalSeats: 30,
+          lowerCount: 15,
+          upperCount: 15,
           status: 'active',
           isActive: true,
-          seats: buildDynamicSeats('MIXED_SEATER_SLEEPER', { basePrice: 650, lowerLeftPrice: 650, lowerRightPrice: 700, upperLeftPrice: 900, upperRightPrice: 950, backPrice: 590 }),
+          seats: buildDynamicSeats('MIXED_SEATER_SLEEPER', {
+            basePrice: 650,
+            lowerLeftPrice: 650,
+            lowerRightPrice: 700,
+            upperLeftPrice: 950,
+            backPrice: 590,
+            totalSeats: 30,
+            lowerCount: 15,
+            upperCount: 15
+          }),
           boardingPoints: [
             { name: 'Majestic (Bus Stand Platform 4)', timeOffset: '+0h 00m' },
             { name: 'Hebbal (Near Flyover)', timeOffset: '+0h 45m' }
@@ -205,13 +214,25 @@ const seedDefaultFleetIfEmpty = async () => {
           arrival: '06:45',
           duration: '8h 30m',
           layoutType: 'ALL_SLEEPER',
+          acType: 'AC',
           category: 'AC Sleeper',
-          type: '2+1 Executive Sleeper (Lower + Upper)',
+          type: '2+1 AC Sleeper (30 Berths)',
           price: 950,
           totalSeats: 30,
+          lowerCount: 15,
+          upperCount: 15,
           status: 'active',
           isActive: true,
-          seats: buildDynamicSeats('ALL_SLEEPER', { basePrice: 950, lowerLeftPrice: 950, lowerRightPrice: 1000, upperLeftPrice: 1100, upperRightPrice: 1150, backPrice: 850 }),
+          seats: buildDynamicSeats('ALL_SLEEPER', {
+            basePrice: 950,
+            lowerLeftPrice: 950,
+            lowerRightPrice: 1000,
+            upperLeftPrice: 1000,
+            backPrice: 900,
+            totalSeats: 30,
+            lowerCount: 15,
+            upperCount: 15
+          }),
           boardingPoints: [
             { name: 'Anand Rao Circle (Near Flyover)', timeOffset: '+0h 00m' },
             { name: 'Electronic City Toll Plaza', timeOffset: '+0h 40m' }
@@ -233,13 +254,22 @@ const seedDefaultFleetIfEmpty = async () => {
           arrival: '14:30',
           duration: '7h 00m',
           layoutType: 'PUSHBACK_ONLY',
-          category: 'Pushback Seater',
-          type: '2+2 Pushback AC',
-          price: 520,
-          totalSeats: 24,
+          acType: 'NON_AC',
+          category: 'Non-AC Seater',
+          type: '2+2 Non-AC Pushback Seater (32 Seats)',
+          price: 480,
+          totalSeats: 32,
+          lowerCount: 32,
+          upperCount: 0,
           status: 'active',
           isActive: true,
-          seats: buildDynamicSeats('PUSHBACK_ONLY', { basePrice: 520, lowerLeftPrice: 520, lowerRightPrice: 550, backPrice: 480 }),
+          seats: buildDynamicSeats('PUSHBACK_ONLY', {
+            basePrice: 480,
+            lowerLeftPrice: 480,
+            lowerRightPrice: 500,
+            backPrice: 450,
+            totalSeats: 32
+          }),
           boardingPoints: [
             { name: 'Majestic (Bus Stand Platform 4)', timeOffset: '+0h 00m' }
           ],
@@ -313,11 +343,11 @@ const startResaleCleanupWorker = () => {
 mongoose
   .connect(process.env.MONGO_URI)
   .then(async () => {
-    console.log(' Connected to MongoDB Atlas successfully!');
+    console.log('Connected to MongoDB Atlas successfully!');
     await seedDefaultFleetIfEmpty();
     startResaleCleanupWorker();
   })
-  .catch((err) => console.error(' MongoDB Connection Error:', err.message));
+  .catch((err) => console.error('MongoDB Connection Error:', err.message));
 
 app.get('/', (req, res) => res.send('ANHAR BUS Backend Server is live!'));
 
@@ -325,7 +355,6 @@ app.get('/', (req, res) => res.send('ANHAR BUS Backend Server is live!'));
 // --- OPERATOR STRICT ADMIN AUTH SYSTEM ---
 // ==========================================
 
-// 1. Send OTP strictly to your fixed admin phone (8977733885)
 app.post('/api/operator/send-setup-otp', async (req, res) => {
   try {
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -343,7 +372,6 @@ app.post('/api/operator/send-setup-otp', async (req, res) => {
   }
 });
 
-// 2. First-time registration: Verify Admin OTP and save Operator Name & Password
 app.post('/api/operator/register-with-otp', async (req, res) => {
   try {
     const { name, password, otp } = req.body;
@@ -359,13 +387,11 @@ app.post('/api/operator/register-with-otp', async (req, res) => {
 
     otpStore.delete(FIXED_OPERATOR_ADMIN_PHONE);
 
-    // Check if operator name already exists
     const existing = await User.findOne({ name: new RegExp(`^${name.trim()}$`, 'i'), isOperator: true });
     if (existing) {
       return res.status(400).json({ success: false, message: 'An operator with this name already exists. Choose a different name.' });
     }
 
-    // Save operator record
     const newOperator = await User.create({
       phone: FIXED_OPERATOR_ADMIN_PHONE,
       name: name.trim(),
@@ -374,17 +400,16 @@ app.post('/api/operator/register-with-otp', async (req, res) => {
       walletBalance: 0
     });
 
-    res.json({ 
-      success: true, 
-      message: 'Operator registered successfully!', 
-      operator: { id: newOperator._id, name: newOperator.name } 
+    res.json({
+      success: true,
+      message: 'Operator registered successfully!',
+      operator: { id: newOperator._id, name: newOperator.name }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// 3. Daily login: Operator logs in using their Name and Password
 app.post('/api/operator/login', async (req, res) => {
   try {
     const { name, password } = req.body;
@@ -420,7 +445,6 @@ app.post('/api/operator/login', async (req, res) => {
 // --- FLEET & OPERATOR BUS MANAGEMENT ---
 // ==========================================
 
-// 4. PASSENGER SEARCH: Past buses disappear automatically
 app.get('/api/buses/search', async (req, res) => {
   try {
     const { source, destination, date } = req.query;
@@ -468,7 +492,6 @@ app.get('/api/buses/search', async (req, res) => {
   }
 });
 
-// 5. OPERATOR FLEET LIST: Operator sees all buses, with completed tags on past days
 app.get('/api/operator/my-buses', async (req, res) => {
   try {
     const { phone } = req.query;
@@ -493,22 +516,42 @@ app.get('/api/operator/my-buses', async (req, res) => {
   }
 });
 
-// 6. OPERATOR ADD NEW BUS
 app.post('/api/operator/buses', async (req, res) => {
   try {
     const busData = { ...req.body };
     const layout = busData.layoutType || 'MIXED_SEATER_SLEEPER';
+    const acLabel = busData.acType === 'NON_AC' ? 'Non-AC' : 'AC';
+
+    const lowerCount = Number(busData.lowerCount || 15);
+    const upperCount = Number(busData.upperCount || 15);
+    const singleCount = Number(busData.totalSeats || 32);
 
     busData.seats = buildDynamicSeats(layout, {
       basePrice: busData.price,
       lowerLeftPrice: busData.lowerLeftPrice || busData.price,
       lowerRightPrice: busData.lowerRightPrice || busData.price,
       upperLeftPrice: busData.upperLeftPrice || Math.round(busData.price * 1.3),
-      upperRightPrice: busData.upperRightPrice || Math.round(busData.price * 1.35),
-      backPrice: busData.backPrice || Math.round(busData.price * 0.9)
+      backPrice: busData.backPrice || Math.round(busData.price * 0.9),
+      totalSeats: layout === 'ALL_SLEEPER' || layout === 'MIXED_SEATER_SLEEPER' ? lowerCount + upperCount : singleCount,
+      lowerCount,
+      upperCount
     });
 
     busData.totalSeats = busData.seats.length;
+    busData.lowerCount = layout === 'ALL_SLEEPER' || layout === 'MIXED_SEATER_SLEEPER' ? lowerCount : singleCount;
+    busData.upperCount = layout === 'ALL_SLEEPER' || layout === 'MIXED_SEATER_SLEEPER' ? upperCount : 0;
+
+    if (layout === 'ALL_SLEEPER') {
+      busData.category = `${acLabel} Sleeper`;
+      busData.type = `2+1 ${acLabel} Sleeper (${busData.totalSeats} Berths)`;
+    } else if (layout === 'MIXED_SEATER_SLEEPER') {
+      busData.category = `${acLabel} Sleeper + Seater`;
+      busData.type = `2+1 ${acLabel} Lower Seater + Upper Sleeper (${busData.totalSeats} Total)`;
+    } else {
+      busData.category = `${acLabel} Seater`;
+      busData.type = `2+2 ${acLabel} ${layout === 'PUSHBACK_ONLY' ? 'Pushback' : 'Classic'} Seater (${busData.totalSeats} Seats)`;
+    }
+
     busData.status = 'active';
     busData.isActive = true;
 
@@ -527,7 +570,6 @@ app.post('/api/operator/buses', async (req, res) => {
   }
 });
 
-// 7. OPERATOR EDIT BUS: Strict guard preventing changes if trip is in the past
 app.put('/api/buses/:id', async (req, res) => {
   try {
     const bus = await Bus.findById(req.params.id);
@@ -549,7 +591,6 @@ app.put('/api/buses/:id', async (req, res) => {
   }
 });
 
-// 8. OPERATOR REMOVE/DELETE BUS
 app.delete('/api/buses/:id', async (req, res) => {
   try {
     const busId = req.params.id;
@@ -577,7 +618,6 @@ app.delete('/api/buses/:id', async (req, res) => {
   }
 });
 
-// 9. OPERATOR TRIP MANIFEST
 app.get('/api/operator/manifest/:busId/:date', async (req, res) => {
   try {
     const { busId, date } = req.params;
@@ -615,7 +655,6 @@ app.get('/api/operator/manifest/:busId/:date', async (req, res) => {
 // --- BOOKING & CANCELLATION ENDPOINTS ---
 // ==========================================
 
-// 10. Fetch all bookings
 app.get('/api/bookings', async (req, res) => {
   try {
     const bookings = await Booking.find().sort({ createdAt: -1 });
@@ -625,13 +664,12 @@ app.get('/api/bookings', async (req, res) => {
   }
 });
 
-// 11. Create new booking & dispatch SMS
 app.post('/api/bookings', async (req, res) => {
   try {
     const newBooking = await Booking.create(req.body);
 
     if (newBooking.contact?.phone) {
-      const seats = (newBooking.passengers || []).map(p => p.seatNumber).join(', ');
+      const seats = (newBooking.passengers || []).map(p => p.seatLabel || p.seatNumber).join(', ');
       const msg = `ANHAR BUS Booking Confirmed! PNR: ${newBooking.pnr}, Route: ${newBooking.route}, Date: ${newBooking.journeyDate} at ${newBooking.departure}, Seats: [${seats}]. Boarding: ${newBooking.boarding}. Happy Journey!`;
       await sendQuickSms(newBooking.contact.phone, msg);
     }
@@ -642,7 +680,6 @@ app.post('/api/bookings', async (req, res) => {
   }
 });
 
-// 12. Tiered redBus Cancellation & Wallet Refund Engine
 app.post('/api/bookings/cancel', async (req, res) => {
   try {
     const { pnr } = req.body;
